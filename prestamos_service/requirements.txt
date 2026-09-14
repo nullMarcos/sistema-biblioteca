@@ -1,0 +1,10 @@
+SQLAlchemy
+fastapi
+uvicorn[standard]
+
+pydantic
+pydantic-settings
+
+grpcio
+grpcio-tools
+protobuf

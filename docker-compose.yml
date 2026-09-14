@@ -1,0 +1,44 @@
+services:
+  catalogo:
+    build:
+      context: ./catalogo_service
+      dockerfile: Dockerfile
+    container_name: catalogo_service
+
+    ports:
+      - "50051:50051"
+    volumes:
+      - catalogo_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/catalogo.db
+      - GRPC_PORT=50051
+    networks:
+      - biblioteca_net
+
+  prestamos:
+    build:
+      context: ./prestamos_service
+      dockerfile: Dockerfile
+    container_name: prestamos_service
+
+    ports:
+      - "8000:8000"
+    volumes:
+      - prestamos_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/prestamos.db
+      - CATALOGO_GRPC_HOST=catalogo
+      - CATALOGO_GRPC_PORT=50051
+    depends_on:
+      - catalogo
+    networks:
+      - biblioteca_net
+
+volumes:
+  catalogo_data:
+  prestamos_data:
+
+networks:
+  biblioteca_net:
+    name: biblioteca_net
+    driver: bridge
