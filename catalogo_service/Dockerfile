@@ -1,6 +1,13 @@
 FROM python:3.14
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
 WORKDIR /app
+
+# Asegurar existencia del directorio de persistencia para la base de datos
+RUN mkdir -p /app/data
 
 COPY requirements.txt .
 
@@ -11,3 +18,4 @@ COPY . .
 EXPOSE 50051
 
 CMD ["python", "main.py"]
+

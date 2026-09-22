@@ -29,7 +29,7 @@ services:
       - DATABASE_URL=sqlite:////app/data/prestamos.db
       - CATALOGO_GRPC_HOST=catalogo
       - CATALOGO_GRPC_PORT=50051
-      - API_KEY=${API_KEY}
+      - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
     depends_on:
       - catalogo
     networks:

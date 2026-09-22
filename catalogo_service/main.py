@@ -65,6 +65,15 @@ def serve():
     servidor.start()
     logger.info(f"Servidor gRPC de Catalogo iniciado en el puerto {puerto} con Reflection y HealthCheck activados.")
 
+    import signal
+
+    def detener_servidor(sig, frame):
+        logger.info("Recibida señal de terminación (%s). Deteniendo servidor gRPC...", sig)
+        servidor.stop(grace=2)
+
+    signal.signal(signal.SIGTERM, detener_servidor)
+    signal.signal(signal.SIGINT, detener_servidor)
+
     try:
         servidor.wait_for_termination()
     except KeyboardInterrupt:
@@ -74,3 +83,4 @@ def serve():
 
 if __name__ == "__main__":
     serve()
+

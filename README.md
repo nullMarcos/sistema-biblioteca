@@ -55,39 +55,56 @@ sistema-biblioteca/
     └── main.py                     # App FastAPI/Flask y lifespan (create_all)
 ```
 
-## Configuración antes de levantar el sistema
+## Ejecución Rápida con Docker Compose
 
-Este proyecto requiere una API Key para autenticar las peticiones a la API de Préstamos. Antes de correr `docker compose up`:
+El sistema está configurado para levantarse inmediatamente con un solo comando:
 
-1. Crear un archivo `.env` en la raíz del repositorio, usando `.env.example` como guía, y completar `API_KEY` con la clave real.
-2. Editar `.env` y definir un valor real para `API_KEY` (no dejar el placeholder — el sistema falla al arrancar si la variable no está definida, a propósito).
+```bash
+docker compose up --build
+```
 
-> **No subir el `.env` al repositorio.** Ya está excluido en `.gitignore`; solo `.env.example` debe versionarse.
+### Autenticación y Variable de Entorno `API_KEY`
 
-### URLs una vez levantado (`docker compose up`)
+La API de Préstamos requiere autenticación mediante el header `X-API-Key`:
+- **Evaluación y desarrollo rápido (Zero-Config)**: Si no se define un archivo `.env`, Docker Compose inyecta automáticamente una clave por defecto para pruebas:
+  ```
+  biblioteca_dev_key_2026
+  ```
+- **Personalización opcional**: Si se desea definir una clave propia, basta con crear un archivo `.env` en la raíz (usando `.env.example` como plantilla):
+  ```bash
+  cp .env.example .env
+  # Editar API_KEY en .env con la clave deseada
+  ```
 
-| Recurso | URL |
-|---|---|
-| Documentación interactiva (Swagger UI) | http://localhost:8000/docs |
-| Especificación OpenAPI (JSON) | http://localhost:8000/openapi.json |
-| Health check | http://localhost:8000/health |
-| API — Socios | http://localhost:8000/v1/socios |
-| API — Préstamos | http://localhost:8000/v1/prestamos |
+### URLs del Sistema (`docker compose up`)
 
-Los endpoints de `/v1/*` no se pueden visitar directo desde el navegador — requieren el header `X-API-Key`, que un navegador no manda por sí solo. Para probarlos:
+| Recurso | URL | Autenticación |
+|---|---|---|
+| Documentación interactiva (Swagger UI) | http://localhost:8000/docs | Requerida (`X-API-Key`) |
+| Especificación OpenAPI (JSON) | http://localhost:8000/openapi.json | Pública |
+| Health check (REST) | http://localhost:8000/health | Pública |
+| API — Socios | http://localhost:8000/v1/socios | Requerida (`X-API-Key`) |
+| API — Préstamos | http://localhost:8000/v1/prestamos | Requerida (`X-API-Key`) |
 
-- **Desde Swagger UI**: En `/docs`, hacer clic en **Authorize**, pegar el valor de `API_KEY` del `.env`, y usar "Try it out" en cada endpoint.
+### Cómo probar los endpoints protegidos
+
+- **Desde Swagger UI**:
+  1. Abrir http://localhost:8000/docs en el navegador.
+  2. Hacer clic en el botón verde **Authorize** (arriba a la derecha).
+  3. Ingresar la clave de desarrollo `biblioteca_dev_key_2026` (o la definida en `.env`).
+  4. Probar cualquier endpoint con el botón **Try it out**.
 
 - **Desde la terminal**:
 
-- **Linux / Mac**:
-```bash
-  curl -H "X-API-Key: [LA API_KEY VA ACÁ]" http://localhost:8000/v1/socios
-```
-- **Windows (PowerShell)**:
-```powershell
-  curl.exe -H "X-API-Key: [LA API_KEY VA ACÁ]" http://localhost:8000/v1/socios
-```
+  - **Linux / macOS**:
+    ```bash
+    curl -H "X-API-Key: biblioteca_dev_key_2026" http://localhost:8000/v1/socios
+    ```
+  - **Windows (PowerShell)**:
+    ```powershell
+    curl.exe -H "X-API-Key: biblioteca_dev_key_2026" http://localhost:8000/v1/socios
+    ```
+
 
 ---
 
