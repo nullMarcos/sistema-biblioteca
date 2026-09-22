@@ -54,3 +54,36 @@ sistema-biblioteca/
     │       └── prestamos.py        # /v1/prestamos
     └── main.py                     # App FastAPI/Flask y lifespan (create_all)
 ```
+## Configuración antes de levantar el sistema
+
+Este proyecto requiere una API Key para autenticar las peticiones a la API de Préstamos. Antes de correr `docker compose up`:
+
+1. Crear un archivo `.env` en la raíz del repositorio, usando `.env.example` como guía, y completar `API_KEY` con la clave real.
+2. Editar `.env` y definir un valor real para `API_KEY` (no dejar el placeholder — el sistema falla al arrancar si la variable no está definida, a propósito).
+
+> **No subir el `.env` al repositorio.** Ya está excluido en `.gitignore`; solo `.env.example` debe versionarse.
+
+### URLs una vez levantado (`docker compose up`)
+
+| Recurso | URL |
+|---|---|
+| Documentación interactiva (Swagger UI) | http://localhost:8000/docs |
+| Especificación OpenAPI (JSON) | http://localhost:8000/openapi.json |
+| Health check | http://localhost:8000/health |
+| API — Socios | http://localhost:8000/v1/socios |
+| API — Préstamos | http://localhost:8000/v1/prestamos |
+
+Los endpoints de `/v1/*` no se pueden visitar directo desde el navegador — requieren el header `X-API-Key`, que un navegador no manda por sí solo. Para probarlos:
+
+- **Desde Swagger UI**: En `/docs`, hacer clic en **Authorize**, pegar el valor de `API_KEY` del `.env`, y usar "Try it out" en cada endpoint.
+
+- **Desde la terminal**:
+
+- **Linux / Mac**:
+```bash
+  curl -H "X-API-Key: [LA API_KEY VA ACÁ]" http://localhost:8000/v1/socios
+```
+- **Windows (PowerShell)**:
+```powershell
+  curl.exe -H "X-API-Key: [LA API_KEY VA ACÁ]" http://localhost:8000/v1/socios
+```
