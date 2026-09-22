@@ -5,6 +5,9 @@ from sqlalchemy import ForeignKey, String, Index, Integer, DateTime, Date, func
 from src.database import Base
 
 class Socio(Base):
+    """
+    Representa la entidad que solicita los préstamos dentro del sistema
+    """
     __tablename__ = "socios"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -14,6 +17,9 @@ class Socio(Base):
     prestamos: Mapped[List["Prestamo"]] = relationship("Prestamo", back_populates="socio")
 
 class Prestamo(Base):
+    """
+    Representa la transaccion
+    """
     __tablename__ = "prestamos"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
