@@ -31,6 +31,12 @@ class CatalogoServicer(catalogo_pb2_grpc.CatalogoServicer):
         """
         session: Session = SessionLocal()
         try:
+            libro = session.get(Libro, request.libro_id)
+            if libro is None:
+                context.set_code(grpc.StatusCode.NOT_FOUND)
+                context.set_details("Libro no encontrado")
+                return catalogo_pb2.ReservaResponse()
+
             ejemplar = (
                 session.query(Ejemplar)
                 .filter(Ejemplar.libro_id == request.libro_id, Ejemplar.estado == "DISPONIBLE")
