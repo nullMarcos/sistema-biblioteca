@@ -4,11 +4,19 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from src.database import get_db
-from src.schemas import SocioInput, SocioOut
+from src.schemas import SocioInput, SocioOut, ErrorResponse
 from src.auth import verificar_api_key
 from src import models
 
-router = APIRouter(prefix="/v1/socios", tags=["Socios"], dependencies=[Depends(verificar_api_key)])
+router = APIRouter(
+    prefix="/v1/socios",
+    tags=["Socios"],
+    dependencies=[Depends(verificar_api_key)],
+    responses={
+        400: {"model": ErrorResponse, "description": "Error en la solicitud"},
+        404: {"model": ErrorResponse, "description": "Socio no encontrado"},
+    }
+)
 
 @router.get("", response_model=List[SocioOut])
 def listar_socios(db: Session = Depends(get_db)):
@@ -16,12 +24,15 @@ def listar_socios(db: Session = Depends(get_db)):
 
 @router.post("", response_model=SocioOut, status_code=201)
 def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
-    # Validacion de correo duplicado
+    # Validación de correo duplicado
     existente = db.query(models.Socio).filter(models.Socio.correo == socio.correo).first()
     if existente is not None:
-        raise HTTPException(status_code=400, detail="Ya existe un socio con ese correo")
+        raise HTTPException(
+            status_code=400,
+            detail={"codigo": "CORREO_DUPLICADO", "mensaje": "Ya existe un socio con ese correo"}
+        )
 
-    #Creacion del nuevo socio
+    # Creación del nuevo socio
     nuevo_socio = models.Socio(nombre=socio.nombre, correo=socio.correo)
     db.add(nuevo_socio)
     db.commit()
@@ -31,9 +42,10 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
 @router.get("/{socio_id}", response_model=SocioOut)
 def consultar_socio(socio_id: int, db: Session = Depends(get_db)):
     socio = db.get(models.Socio, socio_id)
-
     if socio is None:
-        raise HTTPException(status_code=404, detail="No existe un Socio con ese ID")
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "SOCIO_NO_ENCONTRADO", "mensaje": "No existe un Socio con ese ID"}
+        )
 
     return socio
-

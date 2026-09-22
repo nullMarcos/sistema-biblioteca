@@ -5,16 +5,37 @@ from typing import List, Optional
 from datetime import date, datetime, timedelta, timezone
 
 from src.database import get_db
-from src.schemas import PrestamoInput, PrestamoOut
+from src.schemas import PrestamoInput, PrestamoOut, ErrorResponse
 from src.auth import verificar_api_key
 from src import models
-from src.grpc_client import reservar_ejemplar, liberar_ejemplar, LiberacionFallidaError, SinStockError, CatalogoNoDisponibleError
+from src.grpc_client import (
+    reservar_ejemplar,
+    liberar_ejemplar,
+    LiberacionFallidaError,
+    SinStockError,
+    CatalogoNoDisponibleError,
+    CatalogoTimeoutError,
+    CatalogoNotFoundError,
+    CatalogoInvalidArgumentError,
+    CatalogoError,
+    CircuitBreakerOpenError,
+)
 
-router = APIRouter(prefix="/v1/prestamos", tags=["Prestamos"], dependencies=[Depends(verificar_api_key)])
+router = APIRouter(
+    prefix="/v1/prestamos",
+    tags=["Prestamos"],
+    dependencies=[Depends(verificar_api_key)],
+    responses={
+        400: {"model": ErrorResponse, "description": "Error en los parámetros de la solicitud"},
+        404: {"model": ErrorResponse, "description": "Recurso no encontrado"},
+        409: {"model": ErrorResponse, "description": "Conflicto en la operación"},
+        503: {"model": ErrorResponse, "description": "Servicio de Catálogo no disponible"},
+    }
+)
 
 @router.get("", response_model=List[PrestamoOut])
 def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)):
-    """Se filtra por el parametro [estado], si es None se listan todos lo prestamos"""
+    """Se filtra por el parámetro [estado], si es None se listan todos los préstamos."""
     query = db.query(models.Prestamo)
     if estado is not None:
         query = query.filter(models.Prestamo.estado == estado)
@@ -23,20 +44,33 @@ def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)
 
 @router.post("", response_model=PrestamoOut, status_code=201)
 def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
-    # Validacion de socio existente
+    # Validación de socio existente
     socio_existente = db.get(models.Socio, prestamo.socio_id)
     if socio_existente is None:
-        raise HTTPException(status_code=404, detail="No existe un Socio con ese ID")
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "SOCIO_NO_ENCONTRADO", "mensaje": "No existe un Socio con ese ID"}
+        )
 
-    # Intento de reservar el ejemplar
+    # Intento de reservar el ejemplar en Catálogo con manejo granular de errores
     try:
         ejemplar_id = reservar_ejemplar(prestamo.libro_id)
-    except SinStockError:
-        raise HTTPException(status_code=409, detail="No hay stock disponible")
-    except CatalogoNoDisponibleError:
-        raise HTTPException(status_code=503, detail="El servicio de Catálogo no responde. La operación no se completó")
+    except SinStockError as e:
+        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoNotFoundError as e:
+        raise HTTPException(status_code=404, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoInvalidArgumentError as e:
+        raise HTTPException(status_code=400, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CircuitBreakerOpenError as e:
+        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoTimeoutError as e:
+        raise HTTPException(status_code=504, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoNoDisponibleError as e:
+        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoError as e:
+        raise HTTPException(status_code=502, detail={"codigo": e.codigo, "mensaje": e.mensaje})
 
-    # Creacion y guardado del prestamo
+    # Creación y guardado del préstamo
     nuevo_prestamo = models.Prestamo(
         socio_id=prestamo.socio_id,
         libro_id=prestamo.libro_id,
@@ -51,38 +85,53 @@ def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
 
 @router.get("/{prestamo_id}", response_model=PrestamoOut)
 def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
-    # Validar existencia del prestamo
     prestamo = db.get(models.Prestamo, prestamo_id)
     if prestamo is None:
-        raise HTTPException(status_code=404, detail="No existe un Prestamo con ese ID") # No deberia ser 409 si ese el error de No_Encontrado?? igual en el get de socio {socio_id}
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "PRESTAMO_NO_ENCONTRADO", "mensaje": "No existe un Prestamo con ese ID"}
+        )
 
     return prestamo
 
 @router.delete("/{prestamo_id}", response_model=PrestamoOut)
 def eliminar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
-    # Validar existencia del prestamo
     prestamo = db.get(models.Prestamo, prestamo_id)
     if prestamo is None:
-        raise HTTPException(status_code=404, detail="No existe un Prestamo con ese ID")
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "PRESTAMO_NO_ENCONTRADO", "mensaje": "No existe un Prestamo con ese ID"}
+        )
 
-    # Validacion de prestamos ya devuelto
-    estado = prestamo.estado
-    if estado == "DEVUELTO":
-        raise HTTPException(status_code=409, detail="El préstamo ya fue devuelto anteriormente")
+    # Validación de préstamo ya devuelto
+    if prestamo.estado == "DEVUELTO":
+        raise HTTPException(
+            status_code=409,
+            detail={"codigo": "PRESTAMO_YA_DEVUELTO", "mensaje": "El préstamo ya fue devuelto anteriormente"}
+        )
 
-    # Bloque try/except para atrapar caida del sistema de catalogo
+    # Liberación del ejemplar en Catálogo con manejo granular de errores
     try:
         liberar_ejemplar(prestamo.ejemplar_id)
-    except LiberacionFallidaError:
-        raise HTTPException(status_code=409, detail="No se pudo liberar el ejemplar en Catalogo")
-    except CatalogoNoDisponibleError:
-        raise HTTPException(status_code=503, detail="El servicio de Catálogo no responde. La operación no se completó")
+    except LiberacionFallidaError as e:
+        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoNotFoundError as e:
+        raise HTTPException(status_code=404, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoInvalidArgumentError as e:
+        raise HTTPException(status_code=400, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CircuitBreakerOpenError as e:
+        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoTimeoutError as e:
+        raise HTTPException(status_code=504, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoNoDisponibleError as e:
+        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoError as e:
+        raise HTTPException(status_code=502, detail={"codigo": e.codigo, "mensaje": e.mensaje})
 
-    # Actualizacion del pretamo
+    # Actualización del estado del préstamo
     prestamo.estado = "DEVUELTO"
     prestamo.fecha_devolucion = datetime.now(timezone.utc)
     db.commit()
     db.refresh(prestamo)
 
     return prestamo
-    
