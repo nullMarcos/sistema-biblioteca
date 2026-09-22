@@ -1,4 +1,6 @@
 SQLAlchemy
 grpcio
 grpcio-tools
+grpcio-health-checking
+grpcio-reflection
 protobuf
