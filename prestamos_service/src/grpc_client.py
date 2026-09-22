@@ -1,8 +1,14 @@
 # Codigo para comunicarse con el mamañema de Gabriel Castillo Castillo
 import os
+import sys
 import grpc
 
-from protos import catalogo_pb2, catalogo_pb2_grpc
+PROTOS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "protos"))
+if PROTOS_DIR not in sys.path:
+    sys.path.insert(0, PROTOS_DIR)
+
+import catalogo_pb2
+import catalogo_pb2_grpc
 
 CATALOGO_HOST = os.getenv("CATALOGO_GRPC_HOST", "localhost")
 CATALOGO_PORT = os.getenv("CATALOGO_GRPC_PORT", "50051")

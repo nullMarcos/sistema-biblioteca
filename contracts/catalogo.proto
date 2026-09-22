@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package catalogo;
+
+// Servicio gRPC para la gestion del catalogo de la biblioteca y reserva de ejemplares.
+service Catalogo {
+  // Consulta la disponibilidad de ejemplares de un libro.
+  rpc ConsultarDisponibilidad (ConsultaRequest) returns (ConsultaResponse);
+
+  // Reserva un ejemplar disponible de un libro especifico.
+  rpc ReservarEjemplar (ReservaRequest) returns (ReservaResponse);
+
+  // Libera un ejemplar previamente prestado para devolverlo a estado disponible.
+  rpc LiberarEjemplar (LiberarRequest) returns (LiberarResponse);
+
+  // RPCs adicionales para gestion completa del catalogo (Integrante 3)
+  // Lista los libros del catalogo con soporte para filtros opcionales.
+  rpc ListarCatalogo (CatalogoRequest) returns (CatalogoResponse);
+
+  // Obtiene el detalle completo de un libro incluyendo la lista de sus ejemplares.
+  rpc ObtenerLibro (LibroRequest) returns (LibroDTO);
+}
+
+// Mensaje de solicitud para consultar disponibilidad de un libro.
+message ConsultaRequest {
+  int32 libro_id = 1;
+}
+
+// Mensaje de respuesta con la informacion de disponibilidad.
+message ConsultaResponse {
+  int32 libro_id = 1;
+  int32 ejemplares_disponibles = 2;
+  int32 total_ejemplares = 3;
+  string titulo = 4;
+}
+
+// Mensaje de solicitud para reservar un ejemplar.
+message ReservaRequest {
+  int32 libro_id = 1;
+}
+
+// Mensaje de respuesta tras intentar reservar un ejemplar.
+message ReservaResponse {
+  int32 ejemplar_id = 1;
+  bool exito = 2;
+  string motivo = 3;
+}
+
+// Mensaje de solicitud para liberar un ejemplar.
+message LiberarRequest {
+  int32 ejemplar_id = 1;
+}
+
+// Mensaje de respuesta tras intentar liberar un ejemplar.
+message LiberarResponse {
+  bool exito = 1;
+  string motivo = 2;
+}
+
+// Mensaje de solicitud para listar el catalogo con filtros opcionales.
+message CatalogoRequest {
+  string genero = 1;
+  bool solo_disponibles = 2;
+}
+
+// DTO para representacion individual de un ejemplar.
+message EjemplarDTO {
+  int32 id = 1;
+  int32 libro_id = 2;
+  string estado = 3;
+}
+
+// DTO para representacion de un libro en el catalogo.
+message LibroDTO {
+  int32 id = 1;
+  string titulo = 2;
+  string autor = 3;
+  string genero = 4;
+  int32 total_ejemplares = 5;
+  int32 ejemplares_disponibles = 6;
+  repeated EjemplarDTO ejemplares = 7;
+}
+
+// Mensaje de respuesta con la lista de libros del catalogo.
+message CatalogoResponse {
+  repeated LibroDTO libros = 1;
+}
+
+// Mensaje de solicitud para obtener un libro especifico por ID.
+message LibroRequest {
+  int32 libro_id = 1;
+}
