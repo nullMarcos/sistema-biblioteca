@@ -36,7 +36,7 @@ sistema-biblioteca/
 │   │   ├── database.py             # Conexión engine y sesión SQLite/SQLAlchemy
 │   │   ├── models.py               # Modelos Libro y Ejemplar
 │   │   ├── seed.py                 # Datos de prueba iniciales de libros/copias
-│   │   └── server.py               # Implementación de los métodos gRPC
+      └── server.py               # Implementación de los métodos gRPC y Servicer
 │   └── main.py                     # Entrypoint del servidor gRPC
 │
 └── prestamos_service/              # Servicio público Préstamos (REST API)
@@ -44,16 +44,17 @@ sistema-biblioteca/
     ├── requirements.txt
     ├── protos/                     # Cliente compilado a partir de catalogo.proto
     ├── src/
-    │   ├── database.py             # Conexión engine y sesión de su propia BD
-    │   ├── models.py               # Modelos Socio y Prestamo
-    │   ├── grpc_client.py          # Lógica de llamada a Catálogo y manejo de fallas
-    │   ├── schemas.py              # Esquemas Pydantic / DTOs
-    │   ├── auth.py                 # Middleware o dependencia de auth (API Key / Bearer)
-    │   └── routers/                # Endpoints versión v1
-    │       ├── socios.py           # /v1/socios
-    │       └── prestamos.py        # /v1/prestamos
+        ├── database.py             # Conexión engine y sesión de su propia BD
+        ├── models.py               # Modelos Socio y Prestamo
+        ├── grpc_client.py          # Lógica de llamada a Catálogo y manejo de fallas
+        ├── schemas.py              # Esquemas Pydantic / DTOs
+        ├── auth.py                 # Middleware o dependencia de auth (API Key / Bearer)
+        └── routers/                # Endpoints versión v1
+            ├── socios.py           # /v1/socios
+            └── prestamos.py        # /v1/prestamos
     └── main.py                     # App FastAPI/Flask y lifespan (create_all)
 ```
+
 ## Configuración antes de levantar el sistema
 
 Este proyecto requiere una API Key para autenticar las peticiones a la API de Préstamos. Antes de correr `docker compose up`:
@@ -87,3 +88,34 @@ Los endpoints de `/v1/*` no se pueden visitar directo desde el navegador — req
 ```powershell
   curl.exe -H "X-API-Key: [LA API_KEY VA ACÁ]" http://localhost:8000/v1/socios
 ```
+
+---
+
+## Servicio de Catálogo (gRPC)
+
+El servicio de **Catálogo** administra el inventario de libros y la disponibilidad de ejemplares en el puerto gRPC `50051`.
+
+### Compilación del Contrato gRPC (`contracts/catalogo.proto`)
+Si se modifica el archivo `contracts/catalogo.proto`, los stubs de Python pueden recompilarse con el comando estándar de `protoc`:
+
+```bash
+python3 -m grpc_tools.protoc -Icontracts --python_out=catalogo_service/protos --grpc_python_out=catalogo_service/protos contracts/catalogo.proto
+python3 -m grpc_tools.protoc -Icontracts --python_out=prestamos_service/protos --grpc_python_out=prestamos_service/protos contracts/catalogo.proto
+```
+
+### Ejecución Local del Servidor gRPC
+Para ejecutar el servidor de Catálogo de manera independiente:
+```bash
+python3 catalogo_service/main.py
+```
+
+### Funcionalidades y Opcionales Implementados
+- **Métodos Core gRPC:**
+  - `ReservarEjemplar(ReservaRequest)`: Reserva atómica de ejemplar disponible (`DISPONIBLE` -> `PRESTADO`).
+  - `LiberarEjemplar(LiberarRequest)`: Liberación de ejemplar prestado (`PRESTADO` -> `DISPONIBLE`).
+  - `ConsultarDisponibilidad(ConsultaRequest)`: Consulta de conteo total y disponibles por libro.
+  - `ListarCatalogo(CatalogoRequest)`: Lista el catálogo con filtros opcionales de género y disponibilidad.
+  - `ObtenerLibro(LibroRequest)`: Obtiene la información detallada de un libro y sus ejemplares.
+- **gRPC Reflection (`grpc_reflection`):** Habilitado en el puerto `50051` para introspección dinámica con herramientas como `grpcurl` o Postman.
+- **gRPC Health Check (`grpc.health.v1`):** Responde estado `SERVING` en el servicio `catalogo.Catalogo` para monitoreo de infraestructura.
+- **Concurrencia Atómica:** Bloqueo de sesión SQLAlchemy (`with_for_update`) en reservas para evitar condiciones de carrera.

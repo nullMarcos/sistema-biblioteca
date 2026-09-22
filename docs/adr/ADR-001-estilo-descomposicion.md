@@ -2,7 +2,7 @@
 
 * **Estatus:** Aprobado
 * **Fecha:** 2026-09-22
-* **Autor:** Integrante 3 (Desarrollo Servicio gRPC - Catálogo)
+* **Autor:** Equipo de Desarrollo (Servicio gRPC - Catálogo)
 * **Módulo:** `catalogo_service` / `contracts`
 
 ---
