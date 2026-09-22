@@ -1,8 +1,13 @@
 import logging
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+
 from src.seed import seed_database
 from src.database import engine, Base
+from src.routers.socios import router as socios_router
+from src.routers.prestamos import router as prestamos_router
+from src import grpc_client
 
 
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +21,7 @@ async def lifespan(app: FastAPI):
     logger.info("Base de datos de Préstamos inicializada.")
     yield
     # Lógica de apagado (cierre de canales gRPC si aplica)
+    grpc_client.cerrar_canal()
     logger.info("Cerrando servicio de Préstamos...")
 
 app = FastAPI(
@@ -26,6 +32,9 @@ app = FastAPI(
     docs_url="/docs",
     openapi_url="/openapi.json"
 )
+
+app.include_router(socios_router)
+app.include_router(prestamos_router)
 
 # Endpoint de chequeo básico de salud
 @app.get("/health", tags=["Health"])

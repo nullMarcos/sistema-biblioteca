@@ -43,3 +43,6 @@ def liberar_ejemplar(ejemplar_id: int):
 
     if not response.exito:
         raise LiberacionFallidaError(response.motivo)
+
+def cerrar_canal():
+    canal.close()
