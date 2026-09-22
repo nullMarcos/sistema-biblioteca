@@ -1,0 +1,236 @@
+openapi: 3.0.4
+
+info:
+  title: API de Prestamos
+  version: "1.0.0"
+
+paths:
+
+  /v1/socios:
+    get:
+      summary: Listar socios
+      responses:
+        '200':
+          description: Lista de socios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Socio'
+
+    post:
+      summary: Registrar un socio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Socio_Input'
+      responses:
+        '201':
+          description: Socio creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Socio'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+
+  /v1/socios/{socio_id}:
+    get:
+      summary: Consultar un socio
+      parameters:
+        - name: socio_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Socio encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Socio'
+
+  /v1/prestamos:
+    get:
+      summary: Listar prestamos
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ACTIVO, DEVUELTO]
+          description: Filtra los préstamos por estado, Si se omite, se listan todos
+      responses:
+        '200':
+          description: Lista de prestamos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Prestamo'
+
+    post:
+      summary: Registra un prestamo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Prestamo_Input'
+      responses:
+        '201':
+          description: Prestamo creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prestamo'
+        '404':
+          description: No existe un socio con ese ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: El libro solicitado no tiene ejemplares disponibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Catalogo_No_Disponible'
+
+  /v1/prestamos/{prestamo_id}:
+    parameters:
+        - name: prestamo_id
+          in: path
+          required: true
+          schema:
+            type: integer
+
+    get:
+      summary: Consulta un prestamo
+      responses:
+        '200':
+          description: Prestamo encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prestamo'
+
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
+                
+    delete:
+      summary: Elimina/revierte un prestamo
+      responses:
+        '200':
+          description: Prestamo eliminado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prestamo'
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
+        '409':
+          description: El préstamo ya fue devuelto anteriormente, o Catálogo no pudo procesar la liberación del ejemplar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Catalogo_No_Disponible'
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  schemas:
+    
+    # --- SOCIO ---
+
+    Socio_Input:
+      type: object
+      required: [nombre, correo]
+      properties:
+        nombre: { type: string }
+        correo: { type: string, format: email }
+
+    Socio:
+      allOf:
+        - $ref: '#/components/schemas/Socio_Input'
+        - type: object
+          properties:
+            id: { type: integer }
+            prestamos:
+              type: array
+              items:
+                $ref: '#/components/schemas/Prestamo'
+
+    # --- PRESTAMO ---
+
+    Prestamo_Input:
+      type: object
+      required: [socio_id, libro_id]
+      properties:
+        socio_id: { type: integer}
+        libro_id: { type: integer}
+
+    Prestamo:
+      allOf:
+        - $ref: '#/components/schemas/Prestamo_Input'
+        - type: object
+          properties:
+            id: { type: integer }
+            ejemplar_id: { type: integer }
+            fecha_prestamo: { type: string, format: date-time}
+            fecha_limite: { type: string, format: date}
+            fecha_devolucion: { type: string, format: date-time, nullable: true}
+            estado: { type: string }
+
+    # --- ERROR ---
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo: { type: string }
+        mensaje: { type: string }
+
+  securitySchemes:
+
+  # --- AUTENTICACION POR API KEY ---
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-ApiKey
+
+  responses:
+
+    # --- ERRORES ---
+
+    Error_Generico:
+      description: Error de validacion en la petición
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    No_Encontrado:
+      description: El recurso solicitado no existe
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Catalogo_No_Disponible:
+      description: El servicio de Catálogo no responde. La operación no se completó
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
