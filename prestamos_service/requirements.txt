@@ -4,6 +4,7 @@ uvicorn[standard]
 
 pydantic
 pydantic-settings
+email-validator
 
 grpcio
 grpcio-tools
