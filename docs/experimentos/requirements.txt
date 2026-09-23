@@ -1,0 +1,2 @@
+protobuf>=7.35.1,<8
+matplotlib>=3.9,<4
