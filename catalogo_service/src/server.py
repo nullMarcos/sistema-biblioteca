@@ -64,11 +64,9 @@ class CatalogoServicer(catalogo_pb2_grpc.CatalogoServicer):
         except Exception as e:
             session.rollback()
             logger.error(f"Error inesperado al reservar ejemplar para libro_id={request.libro_id}: {e}")
-            return catalogo_pb2.ReservaResponse(
-                ejemplar_id=0,
-                exito=False,
-                motivo="Error interno del servidor al procesar la reserva."
-            )
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details("Error interno al procesar la reserva")
+            return catalogo_pb2.ReservaResponse()
         finally:
             session.close()
 
@@ -110,10 +108,9 @@ class CatalogoServicer(catalogo_pb2_grpc.CatalogoServicer):
         except Exception as e:
             session.rollback()
             logger.error(f"Error inesperado al liberar ejemplar_id={request.ejemplar_id}: {e}")
-            return catalogo_pb2.LiberarResponse(
-                exito=False,
-                motivo="Error interno del servidor al procesar la liberacion."
-            )
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details("Error interno al procesar la liberación")
+            return catalogo_pb2.LiberarResponse()
         finally:
             session.close()
 

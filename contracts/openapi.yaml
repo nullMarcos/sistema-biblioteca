@@ -18,6 +18,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Socio'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
 
     post:
       summary: Registrar un socio
@@ -36,6 +38,8 @@ paths:
                 $ref: '#/components/schemas/Socio'
         '400':
           $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
 
   /v1/socios/{socio_id}:
     get:
@@ -53,6 +57,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Socio'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
 
   /v1/prestamos:
     get:
@@ -63,8 +73,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [ACTIVO, DEVUELTO]
-          description: Filtra los préstamos por estado, Si se omite, se listan todos
+          description: Filtra por coincidencia exacta. Si se omite, se listan todos; el servicio no valida una enumeración de valores.
       responses:
         '200':
           description: Lista de prestamos
@@ -74,6 +83,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Prestamo'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
 
     post:
       summary: Registra un prestamo
@@ -90,8 +101,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Prestamo'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
         '404':
-          description: No existe un socio con ese ID
+          description: No existe el socio o el libro solicitado
           content:
             application/json:
               schema:
@@ -104,6 +119,10 @@ paths:
                 $ref: '#/components/schemas/Error'
         '503':
           $ref: '#/components/responses/Catalogo_No_Disponible'
+        '502':
+          $ref: '#/components/responses/Error_Catalogo'
+        '504':
+          $ref: '#/components/responses/Catalogo_Timeout'
 
   /v1/prestamos/{prestamo_id}:
     parameters:
@@ -122,29 +141,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Prestamo'
-
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
         '404':
           $ref: '#/components/responses/No_Encontrado'
                 
     delete:
-      summary: Elimina/revierte un prestamo
+      summary: Registrar la devolución de un préstamo
+      description: Libera el ejemplar en Catálogo y cambia el estado del préstamo a DEVUELTO; no elimina el registro.
       responses:
         '200':
-          description: Prestamo eliminado
+          description: Préstamo devuelto; el registro se conserva
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Prestamo'
         '404':
           $ref: '#/components/responses/No_Encontrado'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
         '409':
-          description: El préstamo ya fue devuelto anteriormente, o Catálogo no pudo procesar la liberación del ejemplar
+          description: El préstamo ya fue devuelto, o el ejemplar no existe o ya estaba disponible al intentar liberarlo
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '503':
           $ref: '#/components/responses/Catalogo_No_Disponible'
+        '502':
+          $ref: '#/components/responses/Error_Catalogo'
+        '504':
+          $ref: '#/components/responses/Catalogo_Timeout'
+
+  /health:
+    get:
+      summary: Estado del servicio y sus dependencias
+      security: []
+      responses:
+        '200':
+          description: Servicio y dependencias operativas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Una o más dependencias críticas no están disponibles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
 
 security:
   - ApiKeyAuth: []
@@ -165,10 +214,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/Socio_Input'
         - type: object
+          required: [id]
           properties:
             id: { type: integer }
             prestamos:
               type: array
+              default: []
               items:
                 $ref: '#/components/schemas/Prestamo'
 
@@ -185,6 +236,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/Prestamo_Input'
         - type: object
+          required: [id, ejemplar_id, fecha_prestamo, fecha_limite, fecha_devolucion, estado]
           properties:
             id: { type: integer }
             ejemplar_id: { type: integer }
@@ -201,6 +253,23 @@ components:
         codigo: { type: string }
         mensaje: { type: string }
 
+    DependencyStatus:
+      type: object
+      required: [database, catalogo_grpc, circuit_breaker]
+      properties:
+        database: { type: string }
+        catalogo_grpc: { type: string }
+        circuit_breaker: { type: string }
+
+    HealthResponse:
+      type: object
+      required: [status, service, dependencies]
+      properties:
+        status: { type: string }
+        service: { type: string }
+        dependencies:
+          $ref: '#/components/schemas/DependencyStatus'
+
   securitySchemes:
 
   # --- AUTENTICACION POR API KEY ---
@@ -208,14 +277,21 @@ components:
     ApiKeyAuth:
       type: apiKey
       in: header
-      name: X-API-ApiKey
+      name: X-API-Key
 
   responses:
 
     # --- ERRORES ---
 
     Error_Generico:
-      description: Error de validacion en la petición
+      description: Error de validación de parámetros o body; al registrar un socio también indica correo duplicado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    No_Autorizado:
+      description: Falta una API Key válida o la clave enviada no es correcta
       content:
         application/json:
           schema:
@@ -229,7 +305,21 @@ components:
             $ref: '#/components/schemas/Error'
 
     Catalogo_No_Disponible:
-      description: El servicio de Catálogo no responde. La operación no se completó
+      description: Catálogo no está disponible o el circuit breaker está abierto; la operación no se completó
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Error_Catalogo:
+      description: Error no clasificado al comunicarse con Catálogo
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Catalogo_Timeout:
+      description: Catálogo no respondió antes de vencer el timeout
       content:
         application/json:
           schema:
