@@ -13,7 +13,7 @@ service Catalogo {
   // Libera un ejemplar previamente prestado para devolverlo a estado disponible.
   rpc LiberarEjemplar (LiberarRequest) returns (LiberarResponse);
 
-  // RPCs adicionales para gestion completa del catalogo (Integrante 3)
+  // RPCs adicionales para gestion completa del catalogo
   // Lista los libros del catalogo con soporte para filtros opcionales.
   rpc ListarCatalogo (CatalogoRequest) returns (CatalogoResponse);
 

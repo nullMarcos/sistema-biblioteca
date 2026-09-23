@@ -9,8 +9,6 @@ import sys
 import logging
 from concurrent import futures
 import grpc
-from grpc_health.v1 import health, health_pb2, health_pb2_grpc
-from grpc_reflection.v1alpha import reflection
 
 # Garantizar resolucion del directorio protos
 PROTOS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "protos"))
@@ -44,26 +42,9 @@ def serve():
     # Registrar Servicer principal de Catalogo
     catalogo_pb2_grpc.add_CatalogoServicer_to_server(CatalogoServicer(), servidor)
 
-    # Registrar Servicio de Health Check (grpc.health.v1)
-    health_servicer = health.HealthServicer()
-    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, servidor)
-    health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
-    health_servicer.set(
-        catalogo_pb2.DESCRIPTOR.services_by_name['Catalogo'].full_name,
-        health_pb2.HealthCheckResponse.SERVING
-    )
-
-    # Registrar Servicio de Reflection de gRPC
-    service_names = (
-        catalogo_pb2.DESCRIPTOR.services_by_name['Catalogo'].full_name,
-        reflection.SERVICE_NAME,
-        health.SERVICE_NAME,
-    )
-    reflection.enable_server_reflection(service_names, servidor)
-
     servidor.add_insecure_port(f"[::]:{puerto}")
     servidor.start()
-    logger.info(f"Servidor gRPC de Catalogo iniciado en el puerto {puerto} con Reflection y HealthCheck activados.")
+    logger.info(f"Servidor gRPC de Catalogo iniciado en el puerto {puerto}.")
 
     import signal
 

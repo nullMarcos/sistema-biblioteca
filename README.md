@@ -150,7 +150,7 @@ python3 -m grpc_tools.protoc -Icontracts --python_out=catalogo_service/protos --
 python3 -m grpc_tools.protoc -Icontracts --python_out=prestamos_service/protos --grpc_python_out=prestamos_service/protos contracts/catalogo.proto
 ```
 
-No es necesario regenerar stubs si el contrato no cambia. El servicio Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo` y `ObtenerLibro`; Reflection y gRPC Health Check están habilitados en `localhost:50051`.
+No es necesario regenerar stubs si el contrato no cambia. El servicio Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo` y `ObtenerLibro`.
 
 ### Ejecución Local del Servidor gRPC
 Para ejecutar el servidor de Catálogo de manera independiente:
@@ -165,9 +165,6 @@ python3 catalogo_service/main.py
   - `ConsultarDisponibilidad(ConsultaRequest)`: Consulta de conteo total y disponibles por libro.
   - `ListarCatalogo(CatalogoRequest)`: Lista el catálogo con filtros opcionales de género y disponibilidad.
   - `ObtenerLibro(LibroRequest)`: Obtiene la información detallada de un libro y sus ejemplares.
-- **gRPC Reflection (`grpc_reflection`):** Habilitado en el puerto `50051` para introspección dinámica con herramientas como `grpcurl` o Postman.
-- **gRPC Health Check (`grpc.health.v1`):** Responde estado `SERVING` en el servicio `catalogo.Catalogo` para monitoreo de infraestructura.
-- **Concurrencia Atómica:** Bloqueo de sesión SQLAlchemy (`with_for_update`) en reservas para evitar condiciones de carrera.
 
 
 ## Experimento ABET 6
