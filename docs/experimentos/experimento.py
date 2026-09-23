@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Compara tamaños de LibroDTO serializado como JSON y Protocol Buffers."""
+"""Compara el tamaño serializado de LibroDTO en JSON y Protocol Buffers.
+
+Genera los CSV y el gráfico en esta carpeta. Ejecutar desde la raíz con
+`python docs/experimentos/experimento.py`.
+"""
 
 from __future__ import annotations
 
