@@ -9,55 +9,63 @@
 
 ## Descripción
 
-Sistema de biblioteca compuesto por una API REST de Préstamos y un servicio interno gRPC de Catálogo. Préstamos administra socios y préstamos; Catálogo administra libros y ejemplares.
+Sistema distribuido de gestión de biblioteca basado en una arquitectura desacoplada de microservicios, desarrollado en el marco de la asignatura de **Integración de Sistemas** (Universidad de Concepción). El sistema resuelve la administración de socios, catálogo bibliográfico, inventario físico de ejemplares y el ciclo de vida completo de préstamos y devoluciones de libros.
+
+La solución está compuesta por dos servicios autónomos con persistencia independiente y comunicación síncrona:
+
+- **`prestamos_service` (API REST Pública)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Expone las rutas de negocio externas (`/v1/socios` y `/v1/prestamos`), implementa autenticación estricta basada en cabeceras `X-API-Key`, gestiona su propia base de datos SQLite (`prestamos.db`), incorpora hipermedios dinámicos (**HATEOAS**) para navegación de estado de préstamos, y actúa como cliente gRPC de Catálogo integrando patrones avanzados de resiliencia (**Circuit Breaker** y **reintentos con backoff exponencial**), estandarización integral de errores según el contrato OpenAPI (`{codigo, mensaje}`) y chequeo de salud dependiente (`/health`).
+- **`catalogo_service` (Microservicio Interno gRPC)**: Desarrollado sobre el runtime oficial de **gRPC** en Python y **SQLAlchemy 2.0**. Administra el catálogo de libros y el inventario de ejemplares en una base de datos SQLite aislada (`catalogo.db`). Proporciona procedimientos RPC para consulta de disponibilidad, listado con filtros (género y disponibilidad), y reserva (`ReservarEjemplar`) y liberación (`LiberarEjemplar`) atómicas protegidas mediante **bloqueo pesimista** (`with_for_update`) para prevenir sobreventa y condiciones de carrera concurrentes, además de apagado ordenado (*graceful shutdown*).
 
 ## Arquitectura
 
-- `prestamos_service`: FastAPI/REST en el puerto `8000`, protegido con API Key; usa su base de datos SQLite.
-- `catalogo_service`: gRPC en el puerto `50051`; administra el inventario en su propia base SQLite.
-- Ambos servicios se conectan por la red de Docker Compose. El servicio REST llama a Catálogo para reservar y liberar ejemplares.
+- **`prestamos_service`**: FastAPI/REST expuesto en el puerto `8000`, protegido con API Key; persistencia en base de datos SQLite local (`prestamos.db`).
+- **`catalogo_service`**: Servidor gRPC en el puerto `50051`; persistencia en base de datos SQLite local (`catalogo.db`).
+- **Patrón Database-per-Service**: Cada microservicio administra su propio almacenamiento de forma exclusiva. No existen llaves foráneas directas (`ForeignKey`) ni cruces entre bases de datos; la correlación se efectúa mediante identificadores lógicos externos (`libro_id`, `ejemplar_id`).
+- **Comunicación y Red**: Ambos servicios se comunican a través de la red bridge de Docker Compose (`biblioteca_net`). Las operaciones entre Préstamos y Catálogo se realizan síncronamente vía gRPC sobre HTTP/2 utilizando serialización binaria con Protocol Buffers v3.
 
 ## Estructura del repositorio
 
 ```text
 sistema-biblioteca/
-├── docker-compose.yml              # Servicios, puertos, red y volúmenes
-├── README.md                       # Ejecución, pruebas y documentación del proyecto
+├── docker-compose.yml              # Orquestación de servicios, puertos, red y volúmenes
+├── .env.example                    # Plantilla de variables de entorno (API_KEY)
+├── README.md                       # Documentación principal, ejecución y pruebas
 ├── contracts/                      # Contratos compartidos entre consumidores y servicios
-│   ├── openapi.yaml                # Especificación de la API REST
-│   └── catalogo.proto              # Servicio y mensajes Protobuf/gRPC
+│   ├── openapi.yaml                # Especificación formal de la API REST (OpenAPI 3.0.4)
+│   └── catalogo.proto              # Contrato de servicio y mensajes Protobuf/gRPC v3
 ├── docs/
 │   ├── adr/                         # Decisiones de arquitectura (ADR-001 a ADR-004)
 │   └── experimentos/                # Experimento ABET 6 y artefactos generados
-│       ├── experimento.py           # Medición JSON/Protobuf, con y sin gzip
-│       ├── README.md                # Método, hipótesis y análisis
+│       ├── experimento.py           # Script de medición JSON/Protobuf, con y sin gzip
+│       ├── requirements.txt         # Dependencias locales del experimento
+│       ├── README.md                # Método, hipótesis y análisis experimental
 │       ├── resultados.csv           # Mediciones crudas
 │       ├── resultados_resumen.csv   # Resumen estadístico
-│       └── resultados.png           # Gráfico comparativo
+│       └── resultados.png           # Gráfico comparativo generado
 ├── catalogo_service/                # Servicio interno de inventario (gRPC)
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── main.py                      # Inicio del servidor gRPC, health y reflection
-│   ├── protos/                      # Stubs Python generados
+│   ├── Dockerfile                   # Imagen Docker optimizada para Python
+│   ├── requirements.txt             # Dependencias del servicio (gRPC, SQLAlchemy, Protobuf)
+│   ├── main.py                      # Inicio del servidor gRPC y apagado ordenado (graceful shutdown)
+│   ├── protos/                      # Stubs Python generados a partir de catalogo.proto
 │   └── src/
 │       ├── database.py              # Conexión y sesiones de SQLite/SQLAlchemy
-│       ├── models.py                # Modelos Libro y Ejemplar
-│       ├── seed.py                  # Datos de prueba de libros y ejemplares
-│       └── server.py                # Implementación del servicio Catalogo
+│       ├── models.py                # Modelos ORM Libro y Ejemplar (con índices)
+│       ├── seed.py                  # Carga de datos semilla de libros y ejemplares
+│       └── server.py                # Implementación de RPCs del servicio Catalogo
 └── prestamos_service/               # API pública REST de socios y préstamos
-    ├── Dockerfile
-    ├── requirements.txt
-    ├── main.py                      # Aplicación FastAPI y health REST
+    ├── Dockerfile                   # Imagen Docker optimizada para Python/Uvicorn
+    ├── requirements.txt             # Dependencias (FastAPI, Uvicorn, SQLAlchemy, gRPC)
+    ├── main.py                      # Aplicación FastAPI, lifespan, handlers y health check
     ├── protos/                      # Stubs Python del cliente gRPC
     └── src/
-        ├── auth.py                  # Validación del header X-API-Key
-        ├── circuit_breaker.py       # Protección ante fallas de Catálogo
-        ├── database.py              # Conexión y sesiones de SQLite/SQLAlchemy
-        ├── grpc_client.py           # Llamadas gRPC y traducción de errores
-        ├── models.py                # Modelos Socio y Prestamo
-        ├── schemas.py               # Esquemas de entrada y salida
-        ├── seed.py                  # Socios y préstamo de prueba
-        └── routers/                 # Endpoints /v1/socios y /v1/prestamos
+        ├── auth.py                  # Validación de autenticación mediante header X-API-Key
+        ├── circuit_breaker.py       # Patrón Circuit Breaker para protección ante fallas de Catálogo
+        ├── database.py              # Conexión, sesiones de SQLite y dependencia get_db
+        ├── grpc_client.py           # Cliente gRPC, política de reintentos y traducción de errores
+        ├── models.py                # Modelos ORM Socio y Prestamo
+        ├── schemas.py               # Esquemas Pydantic v2 (DTOs de entrada y salida)
+        ├── seed.py                  # Carga de datos semilla de socios y préstamos
+        └── routers/                 # Endpoints modulares (/v1/socios y /v1/prestamos)
 ```
 
 ## Requisitos
@@ -159,6 +167,7 @@ python3 catalogo_service/main.py
 ```
 
 ### Funcionalidades y Opcionales Implementados
+
 - **Métodos Core gRPC:**
   - `ReservarEjemplar(ReservaRequest)`: Reserva atómica de ejemplar disponible (`DISPONIBLE` -> `PRESTADO`).
   - `LiberarEjemplar(LiberarRequest)`: Liberación de ejemplar prestado (`PRESTADO` -> `DISPONIBLE`).
@@ -166,6 +175,14 @@ python3 catalogo_service/main.py
   - `ListarCatalogo(CatalogoRequest)`: Lista el catálogo con filtros opcionales de género y disponibilidad.
   - `ObtenerLibro(LibroRequest)`: Obtiene la información detallada de un libro y sus ejemplares.
 - **HATEOAS (Opcional 3):** Se implementó navegación de estado dinámica en la API REST de Préstamos. Las respuestas incluyen un bloque `_links` que expone dinámicamente el hipervínculo de la acción de devolver (método `DELETE`) únicamente cuando el estado del préstamo es `ACTIVO`.
+- **Resiliencia y Tolerancia a Fallas (ADR-004):**
+  - **Circuit Breaker:** Disyuntor implementado en memoria (`prestamos_service/src/circuit_breaker.py`) que protege las llamadas hacia Catálogo. Ante 3 fallos consecutivos transiciona a `OPEN` respondiendo de forma inmediata (*fail-fast*) con HTTP 503 (`CIRCUITO_ABIERTO`), y tras 10 segundos transiciona a `HALF_OPEN` para probar la recuperación del servicio.
+  - **Reintentos con Backoff Exponencial:** Política de hasta 2 reintentos con esperas de 0.1s y 0.2s aplicada exclusivamente ante fallas transitorias de conectividad (`UNAVAILABLE`, `DEADLINE_EXCEEDED`).
+  - **Mapeo Granular de Excepciones gRPC a HTTP:** Traducción estricta de códigos gRPC a respuestas HTTP normalizadas (`NOT_FOUND` -> 404, `INVALID_ARGUMENT` -> 400, falta de stock -> 409, timeout -> 504).
+- **Manejo Estandarizado de Errores `{codigo, mensaje}`:** Manejadores globales de excepciones en FastAPI que aseguran que todas las respuestas de error (400, 401, 404, 409, 502, 503, 504) cumplan estrictamente con el esquema definido en `openapi.yaml`.
+- **Health Check Integrado y Dependiente:** Endpoint `/health` que comprueba el estado de la base de datos local SQLite, la conectividad con Catálogo gRPC y el estado del Circuit Breaker, respondiendo HTTP 200 (`ok`) o HTTP 503 (`degraded`/`unhealthy`).
+- **Concurrencia Atómica:** Bloqueo pesimista mediante `.with_for_update()` en SQLAlchemy para transacciones de reserva y liberación en `catalogo_service`.
+- **Apagado Ordenado (Graceful Shutdown):** Manejo de señales `SIGTERM` y `SIGINT` en ambos microservicios para cierre limpio de conexiones y recursos.
 
 ## Experimento ABET 6
 
@@ -186,3 +203,19 @@ Genera [`resultados.csv`](docs/experimentos/resultados.csv), [`resultados_resume
 - [ADR-004 · Resiliencia y modos de falla](docs/adr/ADR-004-resiliencia-modos-falla.md)
 
 ## Uso de asistentes de IA
+
+En concordancia con las buenas prácticas de integridad, reproducibilidad y transparencia académica/profesional, a continuación se detalla cómo se utilizaron herramientas de Inteligencia Artificial durante las diferentes etapas del proyecto:
+
+### 1. Herramientas Utilizadas
+- **Antigravity / Gemini / OPENCODE**: Empleado como asistente de ingeniería de software en modo agente para análisis del repositorio, verificación cruzada de contratos, refinamiento de documentación técnica y asistencia en la implementación de patrones de resiliencia y concurrencia.
+
+### 2. Tareas Asistidas y Casos de Uso
+- **Contratos de interfaz:** Apoyo en la revisión y alineación de los contratos OpenAPI y Protocol Buffers.
+- **Resiliencia y manejo de errores:** Apoyo en el diseño del Circuit Breaker, reintentos con backoff y manejo unificado de excepciones.
+- **HATEOAS:** Apoyo en el diseño e integración de enlaces según el estado de los recursos.
+- **Documentación técnica:** Apoyo en la elaboración de ADRs, documentación del sistema y diseño del benchmark Protobuf vs. JSON.
+
+### 3. Supervisión, Validación y Criterio Humano
+- **Revisión Crítica y Adaptación:** Todo fragmento de código, esquema o texto propuesto por los asistentes fue exhaustivamente analizado, revisado, refactorizado y probado por los integrantes del equipo antes de su integración definitiva.
+- **Decisiones Arquitectónicas Propias:** Las decisiones de diseño fundamentales (aislamiento estricto de bases de datos mediante el patrón *Database-per-Service*, selección del estilo de integración síncrona REST/gRPC, bloqueo pesimista `with_for_update` en SQLAlchemy y dimensionamiento de umbrales del disyuntor) fueron evaluadas y consensuadas por los miembros del equipo.
+- **Verificación Práctica:** La corrección y fiabilidad del software fueron validadas mediante la ejecución exitosa de la suite de pruebas unitarias y el despliegue reproducible en contenedores Docker.
