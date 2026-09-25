@@ -1,6 +1,6 @@
 # ADR-001 · Estilo de integración y descomposición
 
-**Estado:** propuesta
+**Estado:** aceptada
 
 ## Contexto
 

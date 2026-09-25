@@ -165,7 +165,7 @@ python3 catalogo_service/main.py
   - `ConsultarDisponibilidad(ConsultaRequest)`: Consulta de conteo total y disponibles por libro.
   - `ListarCatalogo(CatalogoRequest)`: Lista el catálogo con filtros opcionales de género y disponibilidad.
   - `ObtenerLibro(LibroRequest)`: Obtiene la información detallada de un libro y sus ejemplares.
-
+- **HATEOAS (Opcional 3):** Se implementó navegación de estado dinámica en la API REST de Préstamos. Las respuestas incluyen un bloque `_links` que expone dinámicamente el hipervínculo de la acción de devolver (método `DELETE`) únicamente cuando el estado del préstamo es `ACTIVO`.
 
 ## Experimento ABET 6
 

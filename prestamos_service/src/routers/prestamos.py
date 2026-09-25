@@ -33,6 +33,17 @@ router = APIRouter(
     }
 )
 
+def _inyectar_hateoas(prestamo: models.Prestamo) -> PrestamoOut:
+    p_out = PrestamoOut.model_validate(prestamo)
+    links = {
+        "self": {"href": f"/v1/prestamos/{p_out.id}", "method": "GET"},
+        "socio": {"href": f"/v1/socios/{p_out.socio_id}", "method": "GET"}
+    }
+    if p_out.estado == "ACTIVO":
+        links["devolver"] = {"href": f"/v1/prestamos/{p_out.id}", "method": "DELETE"}
+    p_out.links = links
+    return p_out
+
 @router.get("", response_model=List[PrestamoOut])
 def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)):
     """Se filtra por el parámetro [estado], si es None se listan todos los préstamos."""
@@ -40,7 +51,7 @@ def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)
     if estado is not None:
         query = query.filter(models.Prestamo.estado == estado)
 
-    return query.all()
+    return [_inyectar_hateoas(p) for p in query.all()]
 
 @router.post("", response_model=PrestamoOut, status_code=201)
 def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
@@ -81,7 +92,7 @@ def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nuevo_prestamo)
 
-    return nuevo_prestamo
+    return _inyectar_hateoas(nuevo_prestamo)
 
 @router.get("/{prestamo_id}", response_model=PrestamoOut)
 def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
@@ -92,7 +103,7 @@ def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
             detail={"codigo": "PRESTAMO_NO_ENCONTRADO", "mensaje": "No existe un Prestamo con ese ID"}
         )
 
-    return prestamo
+    return _inyectar_hateoas(prestamo)
 
 @router.delete("/{prestamo_id}", response_model=PrestamoOut)
 def eliminar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
@@ -134,4 +145,4 @@ def eliminar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(prestamo)
 
-    return prestamo
+    return _inyectar_hateoas(prestamo)

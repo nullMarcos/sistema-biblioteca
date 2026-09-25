@@ -1,7 +1,6 @@
 from typing import List, Optional, Annotated
 from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict, StringConstraints
-
+from pydantic import BaseModel, ConfigDict, StringConstraints, Field
 try:
     import email_validator  # noqa: F401
     from pydantic import EmailStr
@@ -29,6 +28,7 @@ class PrestamoOut(PrestamoInput):
     fecha_limite: date
     fecha_devolucion: Optional[datetime]
     estado: str
+    links: Optional[dict] = Field(None, alias="_links")
     model_config = ConfigDict(from_attributes=True)
 
 class ErrorResponse(BaseModel):
