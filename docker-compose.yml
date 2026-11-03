@@ -35,9 +35,25 @@ services:
     networks:
       - biblioteca_net
 
+  sanciones:
+    build:
+      context: ./sanciones_service
+      dockerfile: Dockerfile
+    container_name: sanciones_service
+
+    ports:
+      - "8001:8000"
+    volumes:
+      - sanciones_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/sanciones.db
+    networks:
+      - biblioteca_net
+
 volumes:
   catalogo_data:
   prestamos_data:
+  sanciones_data:
 
 networks:
   biblioteca_net:
