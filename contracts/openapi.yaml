@@ -1,7 +1,7 @@
 openapi: 3.0.4
 
 info:
-  title: API de Prestamos
+  title: API de la Biblioteca (Prestamos y Sanciones)
   version: "1.0.0"
 
 paths:
@@ -9,6 +9,13 @@ paths:
   /v1/socios:
     get:
       summary: Listar socios
+      parameters:
+        - name: rut
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filtra por coincidencia exacta de RUT.
       responses:
         '200':
           description: Lista de socios
@@ -177,6 +184,94 @@ paths:
         '504':
           $ref: '#/components/responses/Catalogo_Timeout'
 
+  /v1/sanciones/socios:
+    get:
+      summary: Listar estado de sanciones de todos los socios
+      parameters:
+        - name: rut
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filtra por coincidencia exacta de RUT.
+      responses:
+        '200':
+          description: Resumen de sanciones de socios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SancionSocioResponse'
+
+  /v1/sanciones/socios/{identificador}:
+    get:
+      summary: Consultar sanciones de un socio
+      parameters:
+        - name: identificador
+          in: path
+          required: true
+          description: Identificador del socio (RUT o ID numérico)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detalle de sanciones del socio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SancionSocioResponse'
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
+
+  /chaos/delay:
+    post:
+      summary: Inducir latencia artificial en el servicio de Sanciones
+      parameters:
+        - name: seconds
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+          description: Segundos de retraso artificial
+      responses:
+        '200':
+          description: Latencia artificial configurada
+
+  /chaos/fault:
+    post:
+      summary: Inducir falla HTTP controlada en el servicio de Sanciones
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 500
+          description: Código HTTP de falla (ej. 500)
+      responses:
+        '200':
+          description: Falla HTTP configurada
+
+  /chaos/reset:
+    post:
+      summary: Restablecer comportamiento normal del servicio de Sanciones
+      responses:
+        '200':
+          description: Módulo de caos restablecido
+
+  /chaos/status:
+    get:
+      summary: Consultar estado actual del módulo de caos
+      responses:
+        '200':
+          description: Estado actual del módulo de caos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChaosState'
+
   /health:
     get:
       summary: Estado del servicio y sus dependencias
@@ -205,8 +300,9 @@ components:
 
     Socio_Input:
       type: object
-      required: [nombre, correo]
+      required: [rut, nombre, correo]
       properties:
+        rut: { type: string, example: "11.111.111-1" }
         nombre: { type: string }
         correo: { type: string, format: email }
 
@@ -252,6 +348,60 @@ components:
                 properties:
                   href: { type: string }
                   method: { type: string }
+
+    # --- SANCIONES ---
+
+    Bloqueo:
+      type: object
+      required: [id, motivo, fecha_inicio, estado]
+      properties:
+        id: { type: integer }
+        motivo: { type: string }
+        fecha_inicio: { type: string, format: date-time }
+        fecha_fin: { type: string, format: date-time, nullable: true }
+        estado: { type: string, example: "ACTIVO" }
+
+    Multa:
+      type: object
+      required: [id, tipo, libro_id, ejemplar_id, estado, fecha_emision]
+      properties:
+        id: { type: integer }
+        tipo: { type: string, example: "ATRASO" }
+        libro_id: { type: integer }
+        ejemplar_id: { type: integer }
+        dias_atraso: { type: integer, nullable: true }
+        monto: { type: number, format: float, nullable: true }
+        estado: { type: string, example: "PENDIENTE" }
+        fecha_emision: { type: string, format: date-time }
+        fecha_pago: { type: string, format: date-time, nullable: true }
+
+    SancionSocioResponse:
+      type: object
+      required: [socio_id, rut, nombre, tiene_sancion, bloqueado, multas_pendientes, monto_total_multas]
+      properties:
+        socio_id: { type: integer }
+        rut: { type: string, example: "11.111.111-1" }
+        nombre: { type: string }
+        tiene_sancion: { type: boolean }
+        bloqueado: { type: boolean }
+        multas_pendientes: { type: integer }
+        monto_total_multas: { type: number, format: float }
+        bloqueos_activos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bloqueo'
+        multas_activas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Multa'
+
+    ChaosState:
+      type: object
+      required: [delay_seconds]
+      properties:
+        delay_seconds: { type: number, format: float }
+        fault_status: { type: integer, nullable: true }
+
     # --- ERROR ---
     Error:
       type: object

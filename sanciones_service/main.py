@@ -224,9 +224,12 @@ def consultar_sanciones_socio(identificador: str, db: Session = Depends(get_db))
     response_model=List[SancionSocioResponse],
     tags=["Sanciones"],
 )
-def listar_sanciones_socios(db: Session = Depends(get_db)):
-    """Lista todos los socios y el resumen de sus sanciones."""
-    socios = db.query(models.Socio).all()
+def listar_sanciones_socios(rut: Optional[str] = None, db: Session = Depends(get_db)):
+    """Lista todos los socios y el resumen de sus sanciones, con filtro opcional por RUT."""
+    query = db.query(models.Socio)
+    if rut is not None:
+        query = query.filter(models.Socio.rut == rut)
+    socios = query.all()
     resultado = []
     for s in socios:
         b_activos = [b for b in s.bloqueos if b.estado == "ACTIVO"]

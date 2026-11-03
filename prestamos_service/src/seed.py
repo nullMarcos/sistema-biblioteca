@@ -22,6 +22,7 @@ from src.models import Socio, Prestamo
 # 3 socios de prueba: solo uno con préstamo activo asignado
 SOCIOS_SEMILLA: List[Dict[str, Any]] = [
     {
+        "rut": "11.111.111-1",
         "nombre": "Ana García Morales",
         "correo": "ana.garcia@example.com",
         "prestamos": [
@@ -38,11 +39,13 @@ SOCIOS_SEMILLA: List[Dict[str, Any]] = [
         ],
     },
     {
+        "rut": "22.222.222-2",
         "nombre": "Carlos Mendoza Silva",
         "correo": "carlos.mendoza@example.com",
         "prestamos": [],
     },
     {
+        "rut": "33.333.333-3",
         "nombre": "Lucía Valenzuela Pinto",
         "correo": "lucia.valenzuela@example.com",
         "prestamos": [],
@@ -95,6 +98,7 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
             ]
 
             socio = Socio(
+                rut=data["rut"],
                 nombre=data["nombre"],
                 correo=data["correo"],
                 prestamos=prestamos_objs,

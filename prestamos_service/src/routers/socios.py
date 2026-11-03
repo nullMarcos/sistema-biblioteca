@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from typing import List
+from typing import List, Optional
 
 from src.database import get_db
 from src.schemas import SocioInput, SocioOut, ErrorResponse
@@ -19,11 +19,22 @@ router = APIRouter(
 )
 
 @router.get("", response_model=List[SocioOut])
-def listar_socios(db: Session = Depends(get_db)):
-    return db.query(models.Socio).all()
+def listar_socios(rut: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Socio)
+    if rut is not None:
+        query = query.filter(models.Socio.rut == rut)
+    return query.all()
 
 @router.post("", response_model=SocioOut, status_code=201)
 def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
+    # Validación de RUT duplicado
+    existente_rut = db.query(models.Socio).filter(models.Socio.rut == socio.rut).first()
+    if existente_rut is not None:
+        raise HTTPException(
+            status_code=400,
+            detail={"codigo": "RUT_DUPLICADO", "mensaje": "Ya existe un socio con ese RUT"}
+        )
+
     # Validación de correo duplicado
     existente = db.query(models.Socio).filter(models.Socio.correo == socio.correo).first()
     if existente is not None:
@@ -33,7 +44,7 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
         )
 
     # Creación del nuevo socio
-    nuevo_socio = models.Socio(nombre=socio.nombre, correo=socio.correo)
+    nuevo_socio = models.Socio(rut=socio.rut, nombre=socio.nombre, correo=socio.correo)
     db.add(nuevo_socio)
     db.commit()
     db.refresh(nuevo_socio)

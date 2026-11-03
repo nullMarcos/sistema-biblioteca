@@ -11,6 +11,7 @@ class Socio(Base):
     __tablename__ = "socios"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    rut: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
     nombre: Mapped[str] = mapped_column(String(255), nullable=False)
     correo: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
 

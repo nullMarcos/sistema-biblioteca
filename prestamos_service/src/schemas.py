@@ -9,6 +9,7 @@ except ImportError:
     EmailStr = Annotated[str, StringConstraints(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")]
 
 class SocioInput(BaseModel):
+    rut: str = Field(..., max_length=12, description="RUT del socio (ej. 11.111.111-1)")
     nombre: str
     correo: EmailStr
 
