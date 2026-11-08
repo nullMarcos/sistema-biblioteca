@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: catalogo_service
 
-    ports:
-      - "50051:50051"
+    # ports:
+    #   - "50051:50051"
     volumes:
       - catalogo_data:/app/data
     environment:
@@ -21,8 +21,8 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos_service
 
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "8000:8000"
     volumes:
       - prestamos_data:/app/data
     environment:
@@ -41,12 +41,28 @@ services:
       dockerfile: Dockerfile
     container_name: sanciones_service
 
-    ports:
-      - "8001:8000"
+    # ports:
+    #   - "8001:8000"
     volumes:
       - sanciones_data:/app/data
     environment:
       - DATABASE_URL=sqlite:////app/data/sanciones.db
+    networks:
+      - biblioteca_net
+
+  gateway:
+    build:
+      context: ./gateway_service
+      dockerfile: Dockerfile
+    container_name: gateway_service
+    ports:
+    - "8080:8080"
+    environment:
+      - PRESTAMOS_URL=http://prestamos:8000
+      - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_cambiar}
+    depends_on:
+      - prestamos
     networks:
       - biblioteca_net
 
