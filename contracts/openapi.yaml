@@ -417,6 +417,7 @@ components:
         database: { type: string }
         catalogo_grpc: { type: string }
         circuit_breaker: { type: string }
+        sanciones_circuit_breaker: { type: string }
 
     HealthResponse:
       type: object

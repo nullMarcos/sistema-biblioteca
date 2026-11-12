@@ -11,7 +11,7 @@ from src.database import engine, Base
 from src.routers.socios import router as socios_router
 from src.routers.prestamos import router as prestamos_router
 from src.schemas import HealthResponse, DependencyStatus, ErrorResponse
-from src import grpc_client
+from src import grpc_client, sanciones_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -140,11 +140,12 @@ def health_check(response: Response):
     grpc_info = grpc_client.verificar_salud_grpc(timeout=1.0)
     grpc_status = grpc_info.get("status", "unreachable")
 
-    # 3. Estado del Circuit Breaker
+    # 3. Estado del Circuit Breaker Catálogo y Sanciones
     cb_status = grpc_client.catalogo_circuit_breaker.get_state()
+    sanciones_cb_status = sanciones_client.get_sanciones_client().circuit_breaker.get_state()
 
     # Estado global del servicio
-    is_healthy = (db_status == "ok" and grpc_status == "ok" and cb_status != "open")
+    is_healthy = (db_status == "ok" and grpc_status == "ok" and cb_status != "open" and sanciones_cb_status != "open")
 
     if not is_healthy:
         response.status_code = 503
@@ -160,5 +161,6 @@ def health_check(response: Response):
             database=db_status,
             catalogo_grpc=grpc_status,
             circuit_breaker=cb_status,
+            sanciones_circuit_breaker=sanciones_cb_status,
         )
     )

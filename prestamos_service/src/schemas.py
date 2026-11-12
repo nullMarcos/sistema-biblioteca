@@ -59,6 +59,7 @@ class DependencyStatus(BaseModel):
     database: str
     catalogo_grpc: str
     circuit_breaker: str
+    sanciones_circuit_breaker: Optional[str] = None
 
 class HealthResponse(BaseModel):
     status: str
