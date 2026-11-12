@@ -11,6 +11,7 @@ from src.saga.exceptions import (
     SocioSancionadoError,
     IdempotencyConflictError,
 )
+from src.saga.orchestrator import PrestamoSagaOrchestrator
 
 __all__ = [
     "SagaState",
@@ -21,4 +22,5 @@ __all__ = [
     "SagaCompensationError",
     "SocioSancionadoError",
     "IdempotencyConflictError",
+    "PrestamoSagaOrchestrator",
 ]

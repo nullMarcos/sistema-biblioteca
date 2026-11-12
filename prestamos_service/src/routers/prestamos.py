@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import date, datetime, timedelta, timezone
 
 from src.database import get_db
-from src.schemas import PrestamoInput, PrestamoOut, ErrorResponse
+from src.schemas import PrestamoInput, PrestamoOut, SagaStatusOut, ErrorResponse
 from src.auth import verificar_api_key
 from src import models
 from src.grpc_client import (
@@ -19,6 +19,13 @@ from src.grpc_client import (
     CatalogoInvalidArgumentError,
     CatalogoError,
     CircuitBreakerOpenError,
+)
+from src.saga import (
+    PrestamoSagaOrchestrator,
+    SagaStepError,
+    SocioSancionadoError,
+    IdempotencyConflictError,
+    SagaCompensationError,
 )
 
 router = APIRouter(
@@ -55,17 +62,20 @@ def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)
 
 @router.post("", response_model=PrestamoOut, status_code=201)
 def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
-    # Validación de socio existente
-    socio_existente = db.get(models.Socio, prestamo.socio_id)
-    if socio_existente is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"codigo": "SOCIO_NO_ENCONTRADO", "mensaje": "No existe un Socio con ese ID"}
-        )
-
-    # Intento de reservar el ejemplar en Catálogo con manejo granular de errores
+    """
+    Registra el préstamo de un libro ejecutando la transacción distribuida con el patrón Saga.
+    Coordina Reserva en Catálogo, Verificación en Sanciones y Persistencia en Préstamos.
+    """
+    orquestador = PrestamoSagaOrchestrator(db=db)
     try:
-        ejemplar_id = reservar_ejemplar(prestamo.libro_id)
+        nuevo_prestamo, ctx = orquestador.ejecutar(prestamo)
+        p_out = _inyectar_hateoas(nuevo_prestamo)
+        p_out.idempotency_key = ctx.idempotency_key
+        return p_out
+    except SocioSancionadoError as e:
+        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except IdempotencyConflictError as e:
+        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except SinStockError as e:
         raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except CatalogoNotFoundError as e:
@@ -80,19 +90,33 @@ def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except CatalogoError as e:
         raise HTTPException(status_code=502, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except SagaStepError as e:
+        status_code = 404 if e.codigo == "SOCIO_NO_ENCONTRADO" else 500
+        raise HTTPException(status_code=status_code, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except SagaCompensationError as e:
+        raise HTTPException(status_code=500, detail={"codigo": e.codigo, "mensaje": e.mensaje})
 
-    # Creación y guardado del préstamo
-    nuevo_prestamo = models.Prestamo(
-        socio_id=prestamo.socio_id,
-        libro_id=prestamo.libro_id,
-        ejemplar_id=ejemplar_id,
-        fecha_limite=date.today() + timedelta(days=14)
-    )
-    db.add(nuevo_prestamo)
-    db.commit()
-    db.refresh(nuevo_prestamo)
+@router.get("/saga/{saga_id}", response_model=SagaStatusOut)
+def consultar_estado_saga(saga_id: str, db: Session = Depends(get_db)):
+    """Consulta el estado auditado de una transacción Saga por su UUID."""
+    registro = db.query(models.SagaTransaccion).filter(models.SagaTransaccion.saga_id == saga_id).first()
+    if not registro:
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "SAGA_NO_ENCONTRADA", "mensaje": f"No se encontró registro para la saga '{saga_id}'"}
+        )
+    return registro
 
-    return _inyectar_hateoas(nuevo_prestamo)
+@router.get("/saga/idempotency/{idempotency_key}", response_model=SagaStatusOut)
+def consultar_saga_por_idempotencia(idempotency_key: str, db: Session = Depends(get_db)):
+    """Consulta el estado de una transacción Saga por su clave de idempotencia."""
+    registro = db.query(models.SagaTransaccion).filter(models.SagaTransaccion.idempotency_key == idempotency_key).first()
+    if not registro:
+        raise HTTPException(
+            status_code=404,
+            detail={"codigo": "IDEMPOTENCIA_NO_ENCONTRADA", "mensaje": f"No se encontró registro para la clave '{idempotency_key}'"}
+        )
+    return registro
 
 @router.get("/{prestamo_id}", response_model=PrestamoOut)
 def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
