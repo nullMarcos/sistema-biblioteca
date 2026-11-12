@@ -36,7 +36,7 @@ sistema-biblioteca/
 │   ├── openapi.yaml                # Especificación formal de la API REST (OpenAPI 3.0.4)
 │   └── catalogo.proto              # Contrato de servicio y mensajes Protobuf/gRPC v3
 ├── docs/
-│   ├── adr/                         # Decisiones de arquitectura (ADR-001 a ADR-004)
+│   ├── adr/                         # Decisiones de arquitectura (ADR-001 a ADR-005)
 │   └── experimentos/                # Experimento ABET 6 y artefactos generados
 │       ├── experimento.py           # Script de medición JSON/Protobuf, con y sin gzip
 │       ├── requirements.txt         # Dependencias locales del experimento
@@ -45,7 +45,8 @@ sistema-biblioteca/
 │       ├── resultados_resumen.csv   # Resumen estadístico
 │       └── resultados.png           # Gráfico comparativo generado
 ├── scripts/
-│   └── test_resilience_sanciones.py # Demostración automatizada de resiliencia 
+│   ├── test_resilience_sanciones.py # Demostración automatizada de resiliencia 
+│   └── test_saga_escenarios.py      # Demostración de escenarios Saga y reporte ABET 6
 ├── catalogo_service/                # Servicio interno de inventario (gRPC)
 │   ├── Dockerfile                   # Imagen Docker optimizada para Python
 │   ├── requirements.txt             # Dependencias del servicio (gRPC, SQLAlchemy, Protobuf)
@@ -69,7 +70,8 @@ sistema-biblioteca/
 │       ├── models.py                # Modelos ORM Socio y Prestamo
 │       ├── schemas.py               # Esquemas Pydantic v2 (DTOs de entrada y salida con RUT)
 │       ├── seed.py                  # Carga de datos semilla de socios y préstamos
-│       └── routers/                 # Endpoints modulares (/v1/socios y /v1/prestamos)
+│       ├── routers/                 # Endpoints modulares (/v1/socios y /v1/prestamos)
+│       └── saga/                    # Motor de orquestación Saga, compensación LIFO e idempotencia
 └── sanciones_service/               # Servicio de sanciones, multas y resiliencia
     ├── Dockerfile                   # Imagen Docker optimizada para Python/Uvicorn
     ├── requirements.txt             # Dependencias (FastAPI, Uvicorn, SQLAlchemy, Pydantic)
@@ -226,6 +228,17 @@ python sanciones_service/src/seed.py --reset
     ```
     Ejecuta las 5 fases obligatorias (camino feliz, corte por timeout a 1.5s, disyuntor abierto fail-fast, rechazos por bulkhead y recuperación automática a `CLOSED`).
 
+- **Transacción Distribuida con Patrón Saga (Orquestador y Compensaciones):**
+  - **Coordinación Centralizada:** Implementación del patrón Saga mediante orquestación (`PrestamoSagaOrchestrator`) para la operación de préstamo, coordinando Catálogo (gRPC), Sanciones (HTTP resiliente) y Préstamos (DB local).
+  - **Compensación Semántica en Orden Inverso (LIFO):** Registro de pasos ejecutados en pila. Si el Paso 3 falla (o el Paso 2 detecta sanción activa), el orquestador gatilla la liberación del ejemplar en Catálogo via gRPC (`LiberarEjemplar`), restaurando la consistencia del inventario y evitando reservas huérfanas.
+  - **Idempotencia Estricta:** Manejo de llaves únicas `idempotency_key` con tabla de persistencia `saga_transacciones`, retornando resultados precalculados ante reintentos sin duplicar operaciones ni reservas.
+  - **Degradación Elegante:** Integración con la regla de negocio de Sanciones; si el verificador no responde o está en fallback, el préstamo se registra con estado `EN_REVISION`.
+  - **Script de Demostración de Escenarios 1 y 2 (ABET 6):**
+    ```bash
+    python scripts/test_saga_escenarios.py
+    ```
+    Ejecuta de forma automatizada y reproducible: Escenario 1 (Camino Feliz), deduplicación por Idempotencia, Escenario 2 (Fallo forzado en Paso 3 y compensación inversa en Catálogo) y rechazo inmediato de socios sancionados, generando el reporte cuantitativo en `scripts/resultados_saga_abet6.txt`.
+
 - **Métodos Core gRPC (Catálogo):**
   - `ReservarEjemplar(ReservaRequest)`: Reserva atómica de ejemplar disponible (`DISPONIBLE` -> `PRESTADO`).
   - `LiberarEjemplar(LiberarRequest)`: Liberación de ejemplar prestado (`PRESTADO` -> `DISPONIBLE`).
@@ -256,6 +269,7 @@ Genera [`resultados.csv`](docs/experimentos/resultados.csv), [`resultados_resume
 - [ADR-002 · REST hacia afuera, gRPC hacia adentro](docs/adr/ADR-002-rest-vs-grpc.md)
 - [ADR-003 · Contrato, versionado y evolución](docs/adr/ADR-003-contratos-versionado.md)
 - [ADR-004 · Resiliencia y modos de falla](docs/adr/ADR-004-resiliencia-modos-falla.md)
+- [ADR-005 · Coordinación de transacciones distribuidas mediante patrón Saga e idempotencia](docs/adr/ADR-005-transacciones-distribuidas-saga.md)
 
 ## Uso de asistentes de IA
 
