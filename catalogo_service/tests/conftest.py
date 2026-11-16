@@ -30,7 +30,7 @@ def limpiar_entorno():
 
 @pytest.fixture
 def stub(tmp_path, monkeypatch):
-    engine = create_engine(f"sqlite:///{tmp_path}/catalogo.db", connect_args={"check_same_thread": False})
+    engine = create_engine(f"sqlite:///{tmp_path}/catalogo.db", connect_args={"check_same_thread": False, "timeout": 0.15})
     Base.metadata.create_all(engine)
     sesiones = sessionmaker(bind=engine)
     with sesiones() as db:

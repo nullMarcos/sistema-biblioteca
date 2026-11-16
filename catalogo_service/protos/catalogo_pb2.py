@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x63\x61talogo.proto\x12\x08\x63\x61talogo\"#\n\x0f\x43onsultaRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\"n\n\x10\x43onsultaResponse\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\x12\x1e\n\x16\x65jemplares_disponibles\x18\x02 \x01(\x05\x12\x18\n\x10total_ejemplares\x18\x03 \x01(\x05\x12\x0e\n\x06titulo\x18\x04 \x01(\t\"\"\n\x0eReservaRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\"E\n\x0fReservaResponse\x12\x13\n\x0b\x65jemplar_id\x18\x01 \x01(\x05\x12\r\n\x05\x65xito\x18\x02 \x01(\x08\x12\x0e\n\x06motivo\x18\x03 \x01(\t\"%\n\x0eLiberarRequest\x12\x13\n\x0b\x65jemplar_id\x18\x01 \x01(\x05\"0\n\x0fLiberarResponse\x12\r\n\x05\x65xito\x18\x01 \x01(\x08\x12\x0e\n\x06motivo\x18\x02 \x01(\t\";\n\x0f\x43\x61talogoRequest\x12\x0e\n\x06genero\x18\x01 \x01(\t\x12\x18\n\x10solo_disponibles\x18\x02 \x01(\x08\";\n\x0b\x45jemplarDTO\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x10\n\x08libro_id\x18\x02 \x01(\x05\x12\x0e\n\x06\x65stado\x18\x03 \x01(\t\"\xaa\x01\n\x08LibroDTO\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0e\n\x06titulo\x18\x02 \x01(\t\x12\r\n\x05\x61utor\x18\x03 \x01(\t\x12\x0e\n\x06genero\x18\x04 \x01(\t\x12\x18\n\x10total_ejemplares\x18\x05 \x01(\x05\x12\x1e\n\x16\x65jemplares_disponibles\x18\x06 \x01(\x05\x12)\n\nejemplares\x18\x07 \x03(\x0b\x32\x15.catalogo.EjemplarDTO\"6\n\x10\x43\x61talogoResponse\x12\"\n\x06libros\x18\x01 \x03(\x0b\x32\x12.catalogo.LibroDTO\" \n\x0cLibroRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\x32\xf2\x02\n\x08\x43\x61talogo\x12P\n\x17\x43onsultarDisponibilidad\x12\x19.catalogo.ConsultaRequest\x1a\x1a.catalogo.ConsultaResponse\x12G\n\x10ReservarEjemplar\x12\x18.catalogo.ReservaRequest\x1a\x19.catalogo.ReservaResponse\x12\x46\n\x0fLiberarEjemplar\x12\x18.catalogo.LiberarRequest\x1a\x19.catalogo.LiberarResponse\x12G\n\x0eListarCatalogo\x12\x19.catalogo.CatalogoRequest\x1a\x1a.catalogo.CatalogoResponse\x12:\n\x0cObtenerLibro\x12\x16.catalogo.LibroRequest\x1a\x12.catalogo.LibroDTOb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x63\x61talogo.proto\x12\x08\x63\x61talogo\"#\n\x0f\x43onsultaRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\"n\n\x10\x43onsultaResponse\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\x12\x1e\n\x16\x65jemplares_disponibles\x18\x02 \x01(\x05\x12\x18\n\x10total_ejemplares\x18\x03 \x01(\x05\x12\x0e\n\x06titulo\x18\x04 \x01(\t\"8\n\x0eReservaRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\x12\x14\n\x0coperacion_id\x18\x02 \x01(\t\"U\n\x0fReservaResponse\x12\x13\n\x0b\x65jemplar_id\x18\x01 \x01(\x05\x12\r\n\x05\x65xito\x18\x02 \x01(\x08\x12\x0e\n\x06motivo\x18\x03 \x01(\t\x12\x0e\n\x06\x65stado\x18\x04 \x01(\t\"O\n\x0eLiberarRequest\x12\x13\n\x0b\x65jemplar_id\x18\x01 \x01(\x05\x12\x14\n\x0coperacion_id\x18\x02 \x01(\t\x12\x12\n\nreserva_id\x18\x03 \x01(\t\"@\n\x0fLiberarResponse\x12\r\n\x05\x65xito\x18\x01 \x01(\x08\x12\x0e\n\x06motivo\x18\x02 \x01(\t\x12\x0e\n\x06\x65stado\x18\x03 \x01(\t\"(\n\x10OperacionRequest\x12\x14\n\x0coperacion_id\x18\x01 \x01(\t\"P\n\x12\x43\x61ncelacionRequest\x12\x14\n\x0coperacion_id\x18\x01 \x01(\t\x12\x12\n\nreserva_id\x18\x02 \x01(\t\x12\x10\n\x08libro_id\x18\x03 \x01(\x05\";\n\x0f\x43\x61talogoRequest\x12\x0e\n\x06genero\x18\x01 \x01(\t\x12\x18\n\x10solo_disponibles\x18\x02 \x01(\x08\";\n\x0b\x45jemplarDTO\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x10\n\x08libro_id\x18\x02 \x01(\x05\x12\x0e\n\x06\x65stado\x18\x03 \x01(\t\"\xaa\x01\n\x08LibroDTO\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0e\n\x06titulo\x18\x02 \x01(\t\x12\r\n\x05\x61utor\x18\x03 \x01(\t\x12\x0e\n\x06genero\x18\x04 \x01(\t\x12\x18\n\x10total_ejemplares\x18\x05 \x01(\x05\x12\x1e\n\x16\x65jemplares_disponibles\x18\x06 \x01(\x05\x12)\n\nejemplares\x18\x07 \x03(\x0b\x32\x15.catalogo.EjemplarDTO\"6\n\x10\x43\x61talogoResponse\x12\"\n\x06libros\x18\x01 \x03(\x0b\x32\x12.catalogo.LibroDTO\" \n\x0cLibroRequest\x12\x10\n\x08libro_id\x18\x01 \x01(\x05\x32\x8b\x04\n\x08\x43\x61talogo\x12P\n\x17\x43onsultarDisponibilidad\x12\x19.catalogo.ConsultaRequest\x1a\x1a.catalogo.ConsultaResponse\x12G\n\x10ReservarEjemplar\x12\x18.catalogo.ReservaRequest\x1a\x19.catalogo.ReservaResponse\x12\x46\n\x0fLiberarEjemplar\x12\x18.catalogo.LiberarRequest\x1a\x19.catalogo.LiberarResponse\x12G\n\x0eListarCatalogo\x12\x19.catalogo.CatalogoRequest\x1a\x1a.catalogo.CatalogoResponse\x12:\n\x0cObtenerLibro\x12\x16.catalogo.LibroRequest\x1a\x12.catalogo.LibroDTO\x12K\n\x12\x43onsultarOperacion\x12\x1a.catalogo.OperacionRequest\x1a\x19.catalogo.ReservaResponse\x12J\n\x0f\x43\x61ncelarReserva\x12\x1c.catalogo.CancelacionRequest\x1a\x19.catalogo.LiberarResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,23 +36,27 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_CONSULTARESPONSE']._serialized_start=65
   _globals['_CONSULTARESPONSE']._serialized_end=175
   _globals['_RESERVAREQUEST']._serialized_start=177
-  _globals['_RESERVAREQUEST']._serialized_end=211
-  _globals['_RESERVARESPONSE']._serialized_start=213
-  _globals['_RESERVARESPONSE']._serialized_end=282
-  _globals['_LIBERARREQUEST']._serialized_start=284
-  _globals['_LIBERARREQUEST']._serialized_end=321
-  _globals['_LIBERARRESPONSE']._serialized_start=323
-  _globals['_LIBERARRESPONSE']._serialized_end=371
-  _globals['_CATALOGOREQUEST']._serialized_start=373
-  _globals['_CATALOGOREQUEST']._serialized_end=432
-  _globals['_EJEMPLARDTO']._serialized_start=434
-  _globals['_EJEMPLARDTO']._serialized_end=493
-  _globals['_LIBRODTO']._serialized_start=496
-  _globals['_LIBRODTO']._serialized_end=666
-  _globals['_CATALOGORESPONSE']._serialized_start=668
-  _globals['_CATALOGORESPONSE']._serialized_end=722
-  _globals['_LIBROREQUEST']._serialized_start=724
-  _globals['_LIBROREQUEST']._serialized_end=756
-  _globals['_CATALOGO']._serialized_start=759
-  _globals['_CATALOGO']._serialized_end=1129
+  _globals['_RESERVAREQUEST']._serialized_end=233
+  _globals['_RESERVARESPONSE']._serialized_start=235
+  _globals['_RESERVARESPONSE']._serialized_end=320
+  _globals['_LIBERARREQUEST']._serialized_start=322
+  _globals['_LIBERARREQUEST']._serialized_end=401
+  _globals['_LIBERARRESPONSE']._serialized_start=403
+  _globals['_LIBERARRESPONSE']._serialized_end=467
+  _globals['_OPERACIONREQUEST']._serialized_start=469
+  _globals['_OPERACIONREQUEST']._serialized_end=509
+  _globals['_CANCELACIONREQUEST']._serialized_start=511
+  _globals['_CANCELACIONREQUEST']._serialized_end=591
+  _globals['_CATALOGOREQUEST']._serialized_start=593
+  _globals['_CATALOGOREQUEST']._serialized_end=652
+  _globals['_EJEMPLARDTO']._serialized_start=654
+  _globals['_EJEMPLARDTO']._serialized_end=713
+  _globals['_LIBRODTO']._serialized_start=716
+  _globals['_LIBRODTO']._serialized_end=886
+  _globals['_CATALOGORESPONSE']._serialized_start=888
+  _globals['_CATALOGORESPONSE']._serialized_end=942
+  _globals['_LIBROREQUEST']._serialized_start=944
+  _globals['_LIBROREQUEST']._serialized_end=976
+  _globals['_CATALOGO']._serialized_start=979
+  _globals['_CATALOGO']._serialized_end=1502
 # @@protoc_insertion_point(module_scope)

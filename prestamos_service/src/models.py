@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Index, Integer, DateTime, Date, Text, func
+from sqlalchemy import ForeignKey, String, Index, Integer, DateTime, Date, Text, Boolean, Float, func
 from src.database import Base
 
 class Socio(Base):
@@ -61,9 +61,43 @@ class SagaTransaccion(Base):
     paso_actual: Mapped[str] = mapped_column(String(50), default="INICIO", nullable=False)
     respuesta_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_detalle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    cupo_reservado: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    reserva_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    compensacion_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    accion_pendiente: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    sanciones_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    lease_until: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
+    recuperacion_intentos: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    proximo_intento: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
     fecha_creacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         Index("idx_saga_estado", "estado"),
     )
+
+
+class DevolucionOperacion(Base):
+    __tablename__ = "devolucion_operaciones"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    operacion_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    prestamo_id: Mapped[int] = mapped_column(ForeignKey("prestamos.id"), unique=True, nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    reserva_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    liberacion_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    estado_final: Mapped[str] = mapped_column(String(20), nullable=False)
+    estado: Mapped[str] = mapped_column(String(30), default="PENDIENTE", nullable=False)
+    accion_pendiente: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    respuesta_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_detalle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    lease_until: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
+    recuperacion_intentos: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    proximo_intento: Mapped[float] = mapped_column(Float, default=0, server_default="0", nullable=False)
+    fecha_creacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

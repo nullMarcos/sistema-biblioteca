@@ -47,6 +47,12 @@ paths:
           $ref: '#/components/responses/Error_Generico'
         '401':
           $ref: '#/components/responses/No_Autorizado'
+        '409':
+          description: RUT o correo duplicado, incluido conflicto concurrente de BD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /v1/socios/{socio_id}:
     get:
@@ -119,7 +125,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: El libro solicitado no tiene ejemplares disponibles
+          description: Sin stock, socio sancionado, duplicado socio/libro, cupo agotado, clave incompatible u operación pendiente
           content:
             application/json:
               schema:
@@ -156,8 +162,11 @@ paths:
           $ref: '#/components/responses/No_Encontrado'
                 
     delete:
-      summary: Registrar la devolución de un préstamo
-      description: Libera el ejemplar en Catálogo y cambia el estado del préstamo a DEVUELTO; no elimina el registro.
+      deprecated: true
+      summary: Alias obsoleto de POST devolución
+      description: Comparte el mismo caso de uso durable y la misma identidad de POST /v1/prestamos/{prestamo_id}/devolucion. No elimina registros.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Préstamo devuelto; el registro se conserva
@@ -172,7 +181,7 @@ paths:
         '401':
           $ref: '#/components/responses/No_Autorizado'
         '409':
-          description: El préstamo ya fue devuelto, o el ejemplar no existe o ya estaba disponible al intentar liberarlo
+          description: Préstamo ya devuelto sin replay válido, transición inválida, operación pendiente, identidad incompatible o reserva legacy sin conciliar
           content:
             application/json:
               schema:
@@ -183,6 +192,76 @@ paths:
           $ref: '#/components/responses/Error_Catalogo'
         '504':
           $ref: '#/components/responses/Catalogo_Timeout'
+
+  /v1/prestamos/{prestamo_id}/devolucion:
+    post:
+      summary: Devolver un préstamo o cancelar su revisión
+      description: >-
+        ACTIVO pasa a DEVOLUCION_PENDIENTE y después a DEVUELTO. EN_REVISION se cancela
+        por el mismo flujo a ANULADO, sin aprobar ni entregar el ejemplar. Se persisten
+        intención, propietario y resultado. Si falla después de liberar, el préstamo
+        permanece pendiente hasta finalizar localmente; nunca se reserva otra copia.
+        Misma clave, préstamo y actor repiten el resultado original. Si se omite la
+        clave, se genera una que se devuelve en idempotency_key; una nueva petición
+        sin clave sobre DEVUELTO produce 409. ANULADO/COMPENSADO no admiten transición.
+      parameters:
+        - name: prestamo_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Devolución confirmada o cancelación de revisión confirmada; replay estable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prestamo'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
+        '409':
+          description: Transición inválida, pendiente, clave incompatible o reserva anterior sin identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          $ref: '#/components/responses/Error_Catalogo'
+        '503':
+          description: Indisponibilidad o finalización local pendiente de recuperación; no confirma éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          $ref: '#/components/responses/Catalogo_Timeout'
+
+  /v1/prestamos/devoluciones/idempotency/{idempotency_key}:
+    get:
+      summary: Consultar el progreso durable de una devolución
+      parameters:
+        - name: idempotency_key
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Clave_Idempotencia'
+      responses:
+        '200':
+          description: Estado auditado de devolución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevolucionStatus'
+        '400':
+          $ref: '#/components/responses/Error_Generico'
+        '401':
+          $ref: '#/components/responses/No_Autorizado'
+        '404':
+          $ref: '#/components/responses/No_Encontrado'
 
   /v1/sanciones/socios:
     get:
@@ -294,6 +373,15 @@ security:
   - ApiKeyAuth: []
 
 components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Identidad de devolución ligada al préstamo y actor. Conservarla para repetir el mismo comando.
+      schema:
+        $ref: '#/components/schemas/Clave_Idempotencia'
+
   schemas:
     
     # --- SOCIO ---
@@ -325,8 +413,15 @@ components:
       type: object
       required: [socio_id, libro_id]
       properties:
-        socio_id: { type: integer}
-        libro_id: { type: integer}
+        socio_id: { type: integer, minimum: 1 }
+        libro_id: { type: integer, minimum: 1, maximum: 2147483647 }
+        idempotency_key:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
+          description: Clave de solicitud ligada al payload y actor. Si se omite, se genera una y se devuelve.
 
     Prestamo:
       allOf:
@@ -339,15 +434,44 @@ components:
             fecha_prestamo: { type: string, format: date-time}
             fecha_limite: { type: string, format: date}
             fecha_devolucion: { type: string, format: date-time, nullable: true}
-            estado: { type: string }
+            estado:
+              type: string
+              description: EN_REVISION no autoriza entrega. DEVOLUCION_PENDIENTE retiene cupo hasta confirmar el cierre.
+              enum: [ACTIVO, EN_REVISION, DEVOLUCION_PENDIENTE, DEVUELTO, ANULADO, COMPENSADO]
             _links:
               type: object
-              description: Enlaces HATEOAS para navegación de estado
+              description: ACTIVO ofrece devolver por POST; EN_REVISION ofrece cancelar por POST. Sin acciones de escritura en pendientes o terminales.
               additionalProperties:
                 type: object
                 properties:
                   href: { type: string }
                   method: { type: string }
+
+    Clave_Idempotencia:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
+
+    DevolucionStatus:
+      type: object
+      required: [operacion_id, idempotency_key, prestamo_id, reserva_id, estado, estado_final,
+        recuperacion_intentos, proximo_intento, lease_until, fecha_creacion, fecha_actualizacion]
+      properties:
+        operacion_id: { type: string }
+        idempotency_key:
+          $ref: '#/components/schemas/Clave_Idempotencia'
+        prestamo_id: { type: integer }
+        reserva_id: { type: string }
+        estado: { type: string, enum: [PENDIENTE, COMPLETADA] }
+        estado_final: { type: string, enum: [DEVUELTO, ANULADO] }
+        accion_pendiente: { type: string, nullable: true }
+        error_detalle: { type: string, nullable: true }
+        recuperacion_intentos: { type: integer }
+        proximo_intento: { type: number, description: Instante Unix de elegibilidad; requiere además lease vencido }
+        lease_until: { type: number, description: Vencimiento del lease en tiempo Unix }
+        fecha_creacion: { type: string, format: date-time }
+        fecha_actualizacion: { type: string, format: date-time }
 
     # --- SANCIONES ---
 
@@ -442,7 +566,7 @@ components:
     # --- ERRORES ---
 
     Error_Generico:
-      description: Error de validación de parámetros o body; al registrar un socio también indica correo duplicado
+      description: Error de validación de parámetros o body
       content:
         application/json:
           schema:
@@ -463,7 +587,7 @@ components:
             $ref: '#/components/schemas/Error'
 
     Catalogo_No_Disponible:
-      description: Catálogo no está disponible o el circuit breaker está abierto; la operación no se completó
+      description: Catálogo no disponible o circuito abierto. Una escritura puede permanecer pendiente; consultar su identidad antes de crear otra.
       content:
         application/json:
           schema:

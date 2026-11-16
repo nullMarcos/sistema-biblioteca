@@ -18,10 +18,13 @@ class SocioOut(SocioInput):
     prestamos: List["PrestamoOut"] = []
     model_config = ConfigDict(from_attributes=True)
 
+ClaveIdempotencia = Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")]
+
+
 class PrestamoInput(BaseModel):
-    socio_id: int
-    libro_id: int
-    idempotency_key: Optional[str] = Field(None, description="Clave única para garantizar idempotencia de la transacción")
+    socio_id: int = Field(gt=0, strict=True)
+    libro_id: int = Field(gt=0, le=2147483647, strict=True)
+    idempotency_key: Optional[ClaveIdempotencia] = Field(None, description="Identidad estable de la solicitud")
     simular_fallo_paso3: Optional[bool] = Field(False, description="Bandera para inducir fallo en el paso 3 y verificar compensación")
 
 class PrestamoOut(BaseModel):
@@ -47,6 +50,28 @@ class SagaStatusOut(BaseModel):
     estado: str
     paso_actual: str
     error_detalle: Optional[str] = None
+    reserva_id: Optional[str] = None
+    accion_pendiente: Optional[str] = None
+    recuperacion_intentos: int = 0
+    proximo_intento: float = 0
+    lease_until: float = 0
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DevolucionStatusOut(BaseModel):
+    operacion_id: str
+    idempotency_key: str
+    prestamo_id: int
+    reserva_id: str
+    estado: str
+    estado_final: str
+    accion_pendiente: Optional[str] = None
+    error_detalle: Optional[str] = None
+    recuperacion_intentos: int
+    proximo_intento: float
+    lease_until: float
     fecha_creacion: datetime
     fecha_actualizacion: datetime
     model_config = ConfigDict(from_attributes=True)

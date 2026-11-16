@@ -14,7 +14,7 @@ Sistema distribuido de gestión de biblioteca basado en una arquitectura desacop
 La solución está compuesta por tres servicios autónomos con persistencia independiente y comunicación distribuida:
 
 - **`prestamos_service` (API REST interna)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Atiende las rutas internas `/v1/socios` y `/v1/prestamos`, protegidas con `X-API-Key`; Gateway las publica con JWT bajo `/api/v1`. Gestiona su propia base SQLite (`prestamos.db`), incorpora HATEOAS y consume Catálogo mediante gRPC con Circuit Breaker y reintentos. Conserva errores `{codigo, mensaje}` y un `/health` interno que informa sus dependencias.
-- **`catalogo_service` (Microservicio Interno gRPC)**: Desarrollado sobre el runtime oficial de **gRPC** en Python y **SQLAlchemy 2.0**. Administra el catálogo de libros y el inventario de ejemplares en una base de datos SQLite aislada (`catalogo.db`). Proporciona procedimientos RPC para consulta de disponibilidad, listado con filtros (género y disponibilidad), y reserva (`ReservarEjemplar`) y liberación (`LiberarEjemplar`) atómicas protegidas mediante **bloqueo pesimista** (`with_for_update`) para prevenir sobreventa y condiciones de carrera concurrentes, además de apagado ordenado (*graceful shutdown*).
+- **`catalogo_service` (Microservicio Interno gRPC)**: Desarrollado sobre **gRPC**, **SQLAlchemy 2.0** y SQLite (`catalogo.db`). Proporciona disponibilidad, catálogo con filtros, reserva y liberación. Las escrituras adquieren el escritor de SQLite con `BEGIN IMMEDIATE` antes de seleccionar el ejemplar; no se atribuye bloqueo de filas a SQLite. La espera está acotada por `SQLITE_BUSY_TIMEOUT` (0,5 s por defecto); la saturación de escritura devuelve gRPC `UNAVAILABLE`. Incluye apagado ordenado (*graceful shutdown*).
 - **`sanciones_service` (Microservicio REST de Verificación y Resiliencia)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Administra bloqueos activos y multas pendientes en una base de datos SQLite propia (`sanciones.db`). Implementa un **Módulo de Inyección de Caos** en vivo (`/chaos/delay` y `/chaos/fault`) para inducir latencia y caídas controladas, e incorpora una suite de resiliencia en su cliente consumidor: **Timeout estricto de 1.5s**, **Circuit Breaker** de 3 estados con *fail-fast*, **Bulkhead** de concurrencia acotada a 5 llamadas simultáneas y **Fallback elegante** con degradación a `ESTADO: EN_REVISION_MANUAL`.
 
 ## Arquitectura
@@ -31,7 +31,7 @@ La solución está compuesta por tres servicios autónomos con persistencia inde
 ```text
 sistema-biblioteca/
 ├── docker-compose.yml              # Orquestación de servicios, puertos, red y volúmenes
-├── .env.example                    # Plantilla de API_KEY, JWT_SECRET y GATEWAY_PORT
+├── .env.example                    # Credenciales internas, puerto y políticas configurables
 ├── README.md                       # Documentación principal, ejecución y pruebas
 ├── contracts/                      # Contratos compartidos entre consumidores y servicios
 │   ├── openapi.yaml                # Especificación formal de la API REST (OpenAPI 3.0.4)
@@ -181,7 +181,30 @@ python3 -m venv .venv
 .venv/bin/python scripts/generar_protos.py --check
 ```
 
-El check falla si los archivos versionados difieren del compilador fijado; no los corrige silenciosamente. Docker genera sus propios stubs sin copiarlos desde el host. Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo` y `ObtenerLibro`.
+El check falla si los archivos versionados difieren del compilador fijado; no los corrige silenciosamente. Docker genera sus propios stubs sin copiarlos desde el host. Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo`, `ObtenerLibro`, `ConsultarOperacion` y `CancelarReserva`.
+
+### Identidad, cupos y devolución
+
+- El package gRPC sigue siendo `catalogo` y se conservan los números de campos previos. Las escrituras requieren `operacion_id`; `LiberarEjemplar` exige también `reserva_id`. Los consumidores antiguos sin identidad reciben `INVALID_ARGUMENT`; las lecturas existentes conservan su interfaz.
+- Catálogo confirma inventario y operación juntos. El replay conserva la asignación original y expone el estado actual: Préstamos solo consolida `RESERVADA`. Una reserva terminal no asigna otra copia. `ALREADY_EXISTS` indica payload incompatible; `FAILED_PRECONDITION`, propiedad o inventario que requiere conciliación. Una cancelación anterior a la reserva deja una tumba que impide su ejecución tardía.
+- `POST /v1/prestamos` admite `idempotency_key` de 1–64 caracteres con patrón `[A-Za-z0-9][A-Za-z0-9._:-]*`. Se liga al socio, libro, opciones y actor interno. Si se omite, se genera y se devuelve. Los resultados terminales se repiten; los pendientes y payloads incompatibles producen conflicto explícito.
+- Préstamos reserva el cupo en SQLite antes de llamar a Catálogo. `MAX_PRESTAMOS_POR_SOCIO=5` es una decisión configurable del proyecto. ACTIVO, EN_REVISION y reservas/devoluciones pendientes ocupan cupo; un socio no puede duplicar el mismo libro. RUT/correo duplicados devuelven 409, también bajo concurrencia.
+- La acción principal es `POST /v1/prestamos/{id}/devolucion`, con header opcional `Idempotency-Key` del mismo formato. ACTIVO pasa a `DEVOLUCION_PENDIENTE` y luego `DEVUELTO`. Para EN_REVISION, la misma acción cancela a `ANULADO`, sin aprobar ni entregar el ejemplar. DELETE es un alias obsoleto del mismo caso de uso. Con la misma clave se repite el resultado; una petición nueva sin clave sobre DEVUELTO devuelve 409.
+- El progreso se consulta internamente en `GET /v1/prestamos/saga/idempotency/{clave}` y `GET /v1/prestamos/devoluciones/idempotency/{clave}`. HATEOAS ofrece POST para devolver ACTIVO o cancelar EN_REVISION; las operaciones pendientes y los estados terminales no ofrecen esas acciones.
+
+### Recuperación interna de operaciones
+
+Préstamos confirma intención/identidad antes del efecto remoto y préstamo/resultado/COMPLETADA en una sola transacción local. Las compensaciones se reconstruyen desde BD: primero anulación local si hubo préstamo confirmado, paso de Sanciones de solo lectura, después cancelación de la reserva propietaria. Un fallo conserva `COMPENSACION_PENDIENTE` y su cupo. La devolución conserva `DEVOLUCION_PENDIENTE` hasta cerrar el registro local.
+
+El runner interno procesa un lote acotado de Sagas y devoluciones. Una Saga interrumpida se cancela por su identidad original; una devolución se finaliza usando la misma liberación. Se invoca dentro del servicio que posee esos datos:
+
+```bash
+docker compose exec -T prestamos python -m src.saga.recuperacion --limite 10
+```
+
+Emite JSON con procesadas, resueltas, pendientes, acciones e intentos; termina con código 2 si quedan pendientes y 0 si no quedan. Tiene backoff de 1 a 60 s y máximo de 5 intentos por operación, configurables con `SAGA_RECUPERACION_*` en `.env.example`. Alcanzar el máximo deja el trabajo auditable en pausa. Para reanudar una operación concreta después de resolver su causa, agregar `--reanudar --saga-id ID` o `--reanudar --devolucion-id ID`, usando el identificador consultado; conserva sus identidades remotas.
+
+La adquisición y renovación del lease se persisten en SQLite. `SAGA_LEASE_SECONDS` vale 30 s y debe superar el presupuesto de una llamada remota más margen local; se valida esa relación. Un lease vigente excluye al recuperador y un worker vencido no puede confirmar. El runner se ejecuta por comando operativo; no hay una tarea periódica instalada.
 
 ### Pruebas aisladas y preparación de migraciones
 
@@ -189,13 +212,16 @@ El check falla si los archivos versionados difieren del compilador fijado; no lo
 .venv/bin/python scripts/test_unitarios.py
 .venv/bin/python -m pip check
 .venv/bin/python scripts/verificar_compose.py
+.venv/bin/python scripts/verificar_operaciones.py
 ```
 
-El primer runner comprueba deriva y ejecuta, en procesos separados, las suites comunes, de Catálogo y de Préstamos. Usan SQLite temporal, un servidor gRPC local con puerto asignado por el sistema y clientes de prueba; no ejecutan semillas sobre las BD del usuario. Los servicios falsos se limitan a impedir escrituras remotas no esperadas en los casos unitarios de Préstamos.
+El primer runner comprueba deriva y ejecuta, en procesos separados, las suites comunes, de Catálogo y de Préstamos. Usan SQLite temporal, RPC locales, clientes falsos unitarios y procesos reales con puertos propios. Incluyen concurrencia, respuesta perdida, fallos de persistencia y muerte/reinicio de procesos; sus semillas se ejecutan únicamente sobre archivos temporales.
 
-El runner de Compose usa explícitamente `docker-compose.yml`, sin overrides ni `.env` locales, y fija la URL interna de Sanciones. Crea dos proyectos con nombres/puertos propios, comprueba bindings mediante `docker inspect`, DNS, una lectura gRPC real, separación de volúmenes/datos y arranque de Préstamos con Sanciones detenida. Su limpieza elimina los contenedores, redes, volúmenes e imágenes de esos proyectos desechables. El script antiguo de Gateway admite `BASE_URL` o `GATEWAY_PORT`; su cobertura y limitaciones están registradas en `docs/seguimiento-integrante2.md`.
+El runner de Compose usa explícitamente `docker-compose.yml`, sin overrides ni `.env` locales, y fija la URL interna de Sanciones. Crea dos proyectos con nombres/puertos propios, comprueba bindings mediante `docker inspect`, DNS, una lectura gRPC real, separación de volúmenes/datos y arranque de Préstamos con Sanciones detenida. Su limpieza elimina los contenedores, redes, volúmenes e imágenes de esos proyectos desechables. El script antiguo de Gateway admite `BASE_URL` o `GATEWAY_PORT`.
 
-`scripts/migrar_sqlite.py` prepara el mecanismo de migraciones SQL incrementales para los cambios de esquema posteriores: registra checksum, aplica una sola vez y hace rollback si falla. Todavía no se han añadido migraciones de negocio ni se ha cambiado el esquema de los servicios en C01–C03; `create_all()` sigue inicializando instalaciones nuevas y no se presenta como migración de tablas existentes.
+`verificar_operaciones.py` usa otro proyecto desechable: prueba una Saga con Catálogo y Sanciones reales por Gateway, replay/colisión de payload, devolución POST/DELETE, fallo real de SQLite con compensación y recreación conservando datos/migraciones. Termina con error ante cualquier aserción fallida y limpia los recursos de su ejecución.
+
+Catálogo y Préstamos aplican al arrancar sus migraciones SQL de `migrations/` mediante `scripts/migrar_sqlite.py`: registran checksum, se aplican una sola vez y hacen rollback si fallan. `create_all()` completa la inicialización; no migra columnas existentes. Las migraciones conservan datos anteriores y no inventan identidades para reservas legacy: esos préstamos requieren conciliación explícita antes de devolverlos. La conciliación de semillas corresponde a C10.
 
 ### Ejecución Local de los Microservicios (sin Docker)
 
@@ -241,7 +267,7 @@ python sanciones_service/src/seed.py --reset
 
 - **Transacción Distribuida con Patrón Saga (Orquestador y Compensaciones):**
   - **Coordinación Centralizada:** Implementación del patrón Saga mediante orquestación (`PrestamoSagaOrchestrator`) para la operación de préstamo, coordinando Catálogo (gRPC), Sanciones (HTTP resiliente) y Préstamos (DB local).
-  - **Compensación Semántica en Orden Inverso (LIFO):** Registro de pasos ejecutados en pila. Si el Paso 3 falla (o el Paso 2 detecta sanción activa), el orquestador gatilla la liberación del ejemplar en Catálogo via gRPC (`LiberarEjemplar`), restaurando la consistencia del inventario y evitando reservas huérfanas.
+  - **Compensación Semántica en Orden Inverso:** Progreso y acción pendiente persistidos. Primero se anula un préstamo parcial si existe; Sanciones es solo lectura; después se cancela por identidad en Catálogo. Solo se marca COMPENSADA al confirmar todas las acciones; los fallos quedan pendientes y recuperables.
   - **Idempotencia Estricta:** Manejo de llaves únicas `idempotency_key` con tabla de persistencia `saga_transacciones`, retornando resultados precalculados ante reintentos sin duplicar operaciones ni reservas.
   - **Degradación Elegante:** Integración con la regla de negocio de Sanciones; si el verificador no responde o está en fallback, el préstamo se registra con estado `EN_REVISION`.
   - **Script de Demostración de Escenarios 1 y 2 (ABET 6):**
@@ -256,11 +282,13 @@ python sanciones_service/src/seed.py --reset
   - `ConsultarDisponibilidad(ConsultaRequest)`: Consulta de conteo total y disponibles por libro.
   - `ListarCatalogo(CatalogoRequest)`: Lista el catálogo con filtros opcionales de género y disponibilidad.
   - `ObtenerLibro(LibroRequest)`: Obtiene la información detallada de un libro y sus ejemplares.
-- **HATEOAS (Préstamos):** Navegación de estado dinámica en la API REST de Préstamos (`_links` dinámico para acción `DELETE` al estar en estado `ACTIVO`).
+  - `ConsultarOperacion(OperacionRequest)`: Consulta la asignación y estado por identidad persistente.
+  - `CancelarReserva(CancelacionRequest)`: Cancela por identidad, incluso antes de recibir la reserva original.
+- **HATEOAS (Préstamos):** Acciones POST de devolución para ACTIVO y cancelación para EN_REVISION, según su estado.
 - **Resiliencia Catálogo (ADR-004):** Circuit Breaker y política de reintentos con backoff exponencial sobre llamadas gRPC hacia Catálogo.
 - **Manejo Estandarizado de Errores `{codigo, mensaje}`:** Respuestas estandarizadas en todas las APIs bajo el contrato OpenAPI.
 - **Health Checks:** Endpoints `/health` dedicados en Préstamos y Sanciones.
-- **Concurrencia Atómica:** Bloqueo pesimista mediante `.with_for_update()` en SQLAlchemy para reservas y liberaciones en Catálogo.
+- **Concurrencia SQLite:** Transacciones breves con `BEGIN IMMEDIATE` en reserva y liberación, sin llamadas de red dentro de la transacción. Se comprueban 20 reservas concurrentes sobre dos copias en bases desechables.
 - **Apagado Ordenado (Graceful Shutdown):** Manejo de señales `SIGTERM` y `SIGINT` en los servicios.
 
 ## Experimento ABET 6
@@ -297,5 +325,5 @@ En concordancia con las buenas prácticas de integridad, reproducibilidad y tran
 
 ### 3. Supervisión, Validación y Criterio Humano
 - **Revisión Crítica y Adaptación:** Todo fragmento de código, esquema o texto propuesto por los asistentes fue exhaustivamente analizado, revisado, refactorizado y probado por los integrantes del equipo antes de su integración definitiva.
-- **Decisiones Arquitectónicas Propias:** Las decisiones de diseño fundamentales (aislamiento estricto de bases de datos mediante el patrón *Database-per-Service*, selección del estilo de integración síncrona REST/gRPC, bloqueo pesimista `with_for_update` en SQLAlchemy y dimensionamiento de umbrales del disyuntor) fueron evaluadas y consensuadas por los miembros del equipo.
+- **Decisiones Arquitectónicas Propias:** Las decisiones de diseño fundamentales incluyen aislamiento de bases mediante *Database-per-Service*, integración síncrona REST/gRPC, transacciones compatibles con SQLite y dimensionamiento de umbrales del disyuntor. Sus garantías se contrastan con las pruebas de cada bloque de corrección.
 - **Verificación Práctica:** La corrección y fiabilidad del software fueron validadas mediante la ejecución exitosa de la suite de pruebas unitarias y el despliegue reproducible en contenedores Docker.

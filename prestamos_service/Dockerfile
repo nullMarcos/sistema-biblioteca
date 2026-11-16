@@ -15,9 +15,11 @@ RUN pip install --no-cache-dir -r /app/prestamos_service/requirements.txt && pip
 
 COPY contracts/catalogo.proto /app/contracts/catalogo.proto
 COPY scripts/generar_protos.py /app/scripts/generar_protos.py
+COPY scripts/migrar_sqlite.py /app/scripts/migrar_sqlite.py
 RUN python scripts/generar_protos.py --output /app/protos
 COPY prestamos_service/main.py /app/main.py
 COPY prestamos_service/src /app/src
+COPY prestamos_service/migrations /app/migrations
 
 EXPOSE 8000
 

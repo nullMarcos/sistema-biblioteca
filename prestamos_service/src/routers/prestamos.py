@@ -1,23 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.orm import Session
 
 from typing import List, Optional
-from datetime import date, datetime, timedelta, timezone
 
 from src.database import get_db
-from src.schemas import PrestamoInput, PrestamoOut, SagaStatusOut, ErrorResponse
+from src.schemas import PrestamoInput, PrestamoOut, SagaStatusOut, DevolucionStatusOut, ClaveIdempotencia, ErrorResponse
 from src.auth import verificar_api_key
 from src import models
 from src.grpc_client import (
-    reservar_ejemplar,
-    liberar_ejemplar,
-    LiberacionFallidaError,
     SinStockError,
     CatalogoNoDisponibleError,
     CatalogoTimeoutError,
     CatalogoNotFoundError,
     CatalogoInvalidArgumentError,
     CatalogoError,
+    CatalogoConflictoError,
     CircuitBreakerOpenError,
 )
 from src.saga import (
@@ -27,6 +24,7 @@ from src.saga import (
     IdempotencyConflictError,
     SagaCompensationError,
 )
+from src.saga.devolucion import DevolucionService
 
 router = APIRouter(
     prefix="/v1/prestamos",
@@ -47,7 +45,9 @@ def _inyectar_hateoas(prestamo: models.Prestamo) -> PrestamoOut:
         "socio": {"href": f"/v1/socios/{p_out.socio_id}", "method": "GET"}
     }
     if p_out.estado == "ACTIVO":
-        links["devolver"] = {"href": f"/v1/prestamos/{p_out.id}", "method": "DELETE"}
+        links["devolver"] = {"href": f"/v1/prestamos/{p_out.id}/devolucion", "method": "POST"}
+    elif p_out.estado == "EN_REVISION":
+        links["cancelar"] = {"href": f"/v1/prestamos/{p_out.id}/devolucion", "method": "POST"}
     p_out.links = links
     return p_out
 
@@ -61,14 +61,14 @@ def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)
     return [_inyectar_hateoas(p) for p in query.all()]
 
 @router.post("", response_model=PrestamoOut, status_code=201)
-def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
+def crear_prestamo(prestamo: PrestamoInput, request: Request, db: Session = Depends(get_db)):
     """
     Registra el préstamo de un libro ejecutando la transacción distribuida con el patrón Saga.
     Coordina Reserva en Catálogo, Verificación en Sanciones y Persistencia en Préstamos.
     """
     orquestador = PrestamoSagaOrchestrator(db=db)
     try:
-        nuevo_prestamo, ctx = orquestador.ejecutar(prestamo)
+        nuevo_prestamo, ctx = orquestador.ejecutar(prestamo, actor_id=request.headers.get("X-User-ID"))
         p_out = _inyectar_hateoas(nuevo_prestamo)
         p_out.idempotency_key = ctx.idempotency_key
         return p_out
@@ -88,6 +88,8 @@ def crear_prestamo(prestamo: PrestamoInput, db: Session = Depends(get_db)):
         raise HTTPException(status_code=504, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except CatalogoNoDisponibleError as e:
         raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
+    except CatalogoConflictoError as e:
+        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except CatalogoError as e:
         raise HTTPException(status_code=502, detail={"codigo": e.codigo, "mensaje": e.mensaje})
     except SagaStepError as e:
@@ -129,44 +131,19 @@ def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
 
     return _inyectar_hateoas(prestamo)
 
-@router.delete("/{prestamo_id}", response_model=PrestamoOut)
-def eliminar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
-    prestamo = db.get(models.Prestamo, prestamo_id)
-    if prestamo is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"codigo": "PRESTAMO_NO_ENCONTRADO", "mensaje": "No existe un Prestamo con ese ID"}
-        )
+@router.get("/devoluciones/idempotency/{idempotency_key}", response_model=DevolucionStatusOut)
+def consultar_devolucion(idempotency_key: ClaveIdempotencia, db: Session = Depends(get_db)):
+    operacion = db.query(models.DevolucionOperacion).filter_by(idempotency_key=idempotency_key).first()
+    if operacion is None:
+        raise HTTPException(status_code=404, detail={"codigo": "DEVOLUCION_NO_ENCONTRADA", "mensaje": "No existe esa devolución"})
+    return operacion
 
-    # Validación de préstamo ya devuelto
-    if prestamo.estado == "DEVUELTO":
-        raise HTTPException(
-            status_code=409,
-            detail={"codigo": "PRESTAMO_YA_DEVUELTO", "mensaje": "El préstamo ya fue devuelto anteriormente"}
-        )
 
-    # Liberación del ejemplar en Catálogo con manejo granular de errores
-    try:
-        liberar_ejemplar(prestamo.ejemplar_id)
-    except LiberacionFallidaError as e:
-        raise HTTPException(status_code=409, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CatalogoNotFoundError as e:
-        raise HTTPException(status_code=404, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CatalogoInvalidArgumentError as e:
-        raise HTTPException(status_code=400, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CircuitBreakerOpenError as e:
-        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CatalogoTimeoutError as e:
-        raise HTTPException(status_code=504, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CatalogoNoDisponibleError as e:
-        raise HTTPException(status_code=503, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-    except CatalogoError as e:
-        raise HTTPException(status_code=502, detail={"codigo": e.codigo, "mensaje": e.mensaje})
-
-    # Actualización del estado del préstamo
-    prestamo.estado = "DEVUELTO"
-    prestamo.fecha_devolucion = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(prestamo)
-
-    return _inyectar_hateoas(prestamo)
+@router.post("/{prestamo_id}/devolucion", response_model=PrestamoOut)
+@router.delete("/{prestamo_id}", response_model=PrestamoOut, deprecated=True)
+def eliminar_prestamo(prestamo_id: int, request: Request,
+        idempotency_key: Optional[ClaveIdempotencia] = Header(None, alias="Idempotency-Key"),
+        db: Session = Depends(get_db)):
+    """Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar."""
+    resultado = DevolucionService(db).devolver(prestamo_id, idempotency_key, actor_id=request.headers.get("X-User-ID"))
+    return _inyectar_hateoas(resultado)

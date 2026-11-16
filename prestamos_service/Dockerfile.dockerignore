@@ -5,11 +5,14 @@
 !contracts/catalogo.proto
 !scripts/
 !scripts/generar_protos.py
+!scripts/migrar_sqlite.py
 !prestamos_service/
 !prestamos_service/requirements.txt
 !prestamos_service/main.py
 !prestamos_service/src/
 !prestamos_service/src/**
+!prestamos_service/migrations/
+!prestamos_service/migrations/*.sql
 **/__pycache__/
 **/*.pyc
 **/*.db

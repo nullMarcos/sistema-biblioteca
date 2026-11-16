@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from typing import List, Optional
 
@@ -15,6 +16,7 @@ router = APIRouter(
     responses={
         400: {"model": ErrorResponse, "description": "Error en la solicitud"},
         404: {"model": ErrorResponse, "description": "Socio no encontrado"},
+        409: {"model": ErrorResponse, "description": "RUT o correo duplicado"},
     }
 )
 
@@ -31,7 +33,7 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
     existente_rut = db.query(models.Socio).filter(models.Socio.rut == socio.rut).first()
     if existente_rut is not None:
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail={"codigo": "RUT_DUPLICADO", "mensaje": "Ya existe un socio con ese RUT"}
         )
 
@@ -39,14 +41,24 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
     existente = db.query(models.Socio).filter(models.Socio.correo == socio.correo).first()
     if existente is not None:
         raise HTTPException(
-            status_code=400,
+            status_code=409,
             detail={"codigo": "CORREO_DUPLICADO", "mensaje": "Ya existe un socio con ese correo"}
         )
 
     # Creación del nuevo socio
     nuevo_socio = models.Socio(rut=socio.rut, nombre=socio.nombre, correo=socio.correo)
     db.add(nuevo_socio)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if db.query(models.Socio).filter_by(rut=socio.rut).first():
+            codigo, mensaje = "RUT_DUPLICADO", "Ya existe un socio con ese RUT"
+        elif db.query(models.Socio).filter_by(correo=socio.correo).first():
+            codigo, mensaje = "CORREO_DUPLICADO", "Ya existe un socio con ese correo"
+        else:
+            raise
+        raise HTTPException(status_code=409, detail={"codigo": codigo, "mensaje": mensaje})
     db.refresh(nuevo_socio)
     return nuevo_socio
 

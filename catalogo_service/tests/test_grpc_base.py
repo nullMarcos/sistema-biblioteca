@@ -17,9 +17,10 @@ def test_obtener_libro_inexistente(stub):
 
 
 def test_reserva_y_liberacion_secuenciales(stub):
-    reserva = stub.ReservarEjemplar(pb.ReservaRequest(libro_id=1), timeout=2)
+    reserva = stub.ReservarEjemplar(pb.ReservaRequest(libro_id=1, operacion_id="reserva-base"), timeout=2)
     assert reserva.exito
     assert reserva.ejemplar_id in {1, 2}
     assert stub.ConsultarDisponibilidad(pb.ConsultaRequest(libro_id=1), timeout=2).ejemplares_disponibles == 1
-    assert stub.LiberarEjemplar(pb.LiberarRequest(ejemplar_id=reserva.ejemplar_id), timeout=2).exito
+    assert stub.LiberarEjemplar(pb.LiberarRequest(ejemplar_id=reserva.ejemplar_id,
+        operacion_id="liberar-base", reserva_id="reserva-base"), timeout=2).exito
     assert stub.ConsultarDisponibilidad(pb.ConsultaRequest(libro_id=1), timeout=2).ejemplares_disponibles == 2

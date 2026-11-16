@@ -7,7 +7,10 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from src.seed import seed_database
-from src.database import engine, Base
+from src.database import engine, Base, migrar_esquema
+from src.saga.exceptions import SagaError
+from sqlalchemy.exc import OperationalError
+import sqlite3
 from src.routers.socios import router as socios_router
 from src.routers.prestamos import router as prestamos_router
 from src.schemas import HealthResponse, DependencyStatus, ErrorResponse
@@ -19,6 +22,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Ciclo de vida: se ejecuta al arrancar el contenedor."""
+    migrar_esquema()
     Base.metadata.create_all(bind=engine)
     seed_database()
     logger.info("Base de datos de Préstamos inicializada.")
@@ -82,6 +86,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=400,
         content={"codigo": "ERROR_VALIDACION", "mensaje": detalle_msg},
     )
+
+
+@app.exception_handler(SagaError)
+async def saga_error_handler(request: Request, exc: SagaError):
+    return JSONResponse(status_code=getattr(exc, "http_status", 500),
+        content={"codigo": exc.codigo, "mensaje": exc.mensaje})
+
+
+@app.exception_handler(OperationalError)
+async def persistencia_error_handler(request: Request, exc: OperationalError):
+    busy = getattr(exc.orig, "sqlite_errorcode", 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+    return JSONResponse(status_code=503 if busy else 500, content={"codigo": "BD_OCUPADA" if busy else "ERROR_PERSISTENCIA",
+        "mensaje": "Base temporalmente ocupada; reintente con la misma clave" if busy else "Fallo de persistencia local"})
 
 @app.exception_handler(grpc_client.CatalogoError)
 async def catalogo_error_handler(request: Request, exc: grpc_client.CatalogoError):

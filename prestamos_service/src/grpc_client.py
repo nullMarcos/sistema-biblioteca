@@ -78,6 +78,11 @@ class LiberacionFallidaError(CatalogoError):
         super().__init__(motivo, codigo="LIBERACION_FALLIDA")
 
 
+class CatalogoConflictoError(CatalogoError):
+    def __init__(self, mensaje="Conflicto de identidad o estado de reserva"):
+        super().__init__(mensaje, codigo="CATALOGO_CONFLICTO")
+
+
 # --- CIRCUIT BREAKER ---
 
 catalogo_circuit_breaker = CircuitBreaker(
@@ -103,6 +108,8 @@ def _traducir_rpc_error(e: grpc.RpcError) -> CatalogoError:
         return CatalogoNotFoundError(f"Recurso no encontrado en Catálogo: {details or 'no encontrado'}")
     elif code == grpc.StatusCode.INVALID_ARGUMENT:
         return CatalogoInvalidArgumentError(f"Argumento inválido enviado a Catálogo: {details or 'argumento inválido'}")
+    elif code in (grpc.StatusCode.ALREADY_EXISTS, grpc.StatusCode.FAILED_PRECONDITION):
+        return CatalogoConflictoError(details)
     else:
         return CatalogoError(f"Error en Catálogo ({code}): {details}", codigo="ERROR_CATALOGO")
 
@@ -139,34 +146,57 @@ def _ejecutar_con_reintentos(operacion, *args, **kwargs):
 
 # --- OPERACIONES DEL CLIENTE ---
 
-def _reservar_raw(libro_id: int) -> int:
-    request = catalogo_pb2.ReservaRequest(libro_id=libro_id)
+def _reservar_raw(libro_id: int, operacion_id: str) -> int:
+    request = catalogo_pb2.ReservaRequest(libro_id=libro_id, operacion_id=operacion_id)
     response = _ejecutar_con_reintentos(stub.ReservarEjemplar, request, timeout=TIME_OUT_SEGS)
 
-    if not response.exito:
+    if response.estado in {"CANCELADA", "LIBERADA"}:
+        raise CatalogoConflictoError("La reserva ya está terminada: " + response.estado)
+    if response.estado == "SIN_STOCK" and not response.exito and response.ejemplar_id == 0:
         raise SinStockError(response.motivo or "No hay stock disponible")
+    if response.estado != "RESERVADA" or not response.exito or response.ejemplar_id <= 0:
+        raise CatalogoError("Catálogo no confirmó una reserva identificable y vigente", codigo="RESPUESTA_CATALOGO_INVALIDA")
 
     return response.ejemplar_id
 
 
-def reservar_ejemplar(libro_id: int) -> int:
+def reservar_ejemplar(libro_id: int, operacion_id: str) -> int:
     """Reserva un ejemplar en Catálogo protegido por Circuit Breaker y política de reintentos."""
-    return catalogo_circuit_breaker.call(_reservar_raw, libro_id)
+    return catalogo_circuit_breaker.call(_reservar_raw, libro_id, operacion_id)
 
 
-def _liberar_raw(ejemplar_id: int) -> bool:
-    request = catalogo_pb2.LiberarRequest(ejemplar_id=ejemplar_id)
+def _liberar_raw(ejemplar_id: int, operacion_id: str, reserva_id: str) -> bool:
+    request = catalogo_pb2.LiberarRequest(ejemplar_id=ejemplar_id, operacion_id=operacion_id, reserva_id=reserva_id)
     response = _ejecutar_con_reintentos(stub.LiberarEjemplar, request, timeout=TIME_OUT_SEGS)
 
     if not response.exito:
         raise LiberacionFallidaError(response.motivo or "No se pudo liberar el ejemplar en Catalogo")
+    if response.estado != "LIBERADA":
+        raise CatalogoError("Catálogo no confirmó el estado de liberación", codigo="RESPUESTA_CATALOGO_INVALIDA")
 
     return True
 
 
-def liberar_ejemplar(ejemplar_id: int) -> bool:
+def liberar_ejemplar(ejemplar_id: int, operacion_id: str, reserva_id: str) -> bool:
     """Libera un ejemplar en Catálogo protegido por Circuit Breaker y política de reintentos."""
-    return catalogo_circuit_breaker.call(_liberar_raw, ejemplar_id)
+    return catalogo_circuit_breaker.call(_liberar_raw, ejemplar_id, operacion_id, reserva_id)
+
+
+def cancelar_reserva(libro_id: int, reserva_id: str, operacion_id: str) -> bool:
+    def ejecutar():
+        request = catalogo_pb2.CancelacionRequest(libro_id=libro_id, reserva_id=reserva_id, operacion_id=operacion_id)
+        response = _ejecutar_con_reintentos(stub.CancelarReserva, request, timeout=TIME_OUT_SEGS)
+        if not response.exito:
+            raise LiberacionFallidaError(response.motivo)
+        if response.estado != "CANCELADA":
+            raise CatalogoError("Catálogo no confirmó el estado de cancelación", codigo="RESPUESTA_CATALOGO_INVALIDA")
+        return True
+    return catalogo_circuit_breaker.call(ejecutar)
+
+
+def consultar_operacion(operacion_id: str):
+    return catalogo_circuit_breaker.call(_ejecutar_con_reintentos, stub.ConsultarOperacion,
+        catalogo_pb2.OperacionRequest(operacion_id=operacion_id), timeout=TIME_OUT_SEGS)
 
 
 def verificar_salud_grpc(timeout: float = 1.0) -> dict:

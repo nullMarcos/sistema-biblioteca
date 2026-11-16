@@ -19,6 +19,11 @@ service Catalogo {
 
   // Obtiene el detalle completo de un libro incluyendo la lista de sus ejemplares.
   rpc ObtenerLibro (LibroRequest) returns (LibroDTO);
+
+  // Conciliacion interna por identidad; no se infiere el resultado de un timeout.
+  rpc ConsultarOperacion (OperacionRequest) returns (ReservaResponse);
+  // Cancela incluso si la reserva aun no llego; conserva una tumba terminal.
+  rpc CancelarReserva (CancelacionRequest) returns (LiberarResponse);
 }
 
 // Mensaje de solicitud para consultar disponibilidad de un libro.
@@ -37,24 +42,42 @@ message ConsultaResponse {
 // Mensaje de solicitud para reservar un ejemplar.
 message ReservaRequest {
   int32 libro_id = 1;
+  // Obligatorio para escrituras; maximo 128 caracteres [A-Za-z0-9._:-].
+  string operacion_id = 2;
 }
 
 // Mensaje de respuesta tras intentar reservar un ejemplar.
 message ReservaResponse {
   int32 ejemplar_id = 1;
+  // Resultado de la asignacion original; no implica que siga vigente.
   bool exito = 2;
   string motivo = 3;
+  // Estado actual. El consumidor solo consolida una reserva RESERVADA.
+  string estado = 4;
 }
 
 // Mensaje de solicitud para liberar un ejemplar.
 message LiberarRequest {
   int32 ejemplar_id = 1;
+  string operacion_id = 2;
+  string reserva_id = 3;
 }
 
 // Mensaje de respuesta tras intentar liberar un ejemplar.
 message LiberarResponse {
   bool exito = 1;
   string motivo = 2;
+  string estado = 3;
+}
+
+message OperacionRequest {
+  string operacion_id = 1;
+}
+
+message CancelacionRequest {
+  string operacion_id = 1;
+  string reserva_id = 2;
+  int32 libro_id = 3;
 }
 
 // Mensaje de solicitud para listar el catalogo con filtros opcionales.

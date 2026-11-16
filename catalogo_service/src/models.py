@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, Index
-from typing import List
+from sqlalchemy import ForeignKey, String, Index, Text, text
+from typing import List, Optional
 from src.database import Base
 
 class Libro(Base):
@@ -27,3 +27,25 @@ class Ejemplar(Base):
     __table_args__ = (
         Index("idx_libro_estado", "libro_id", "estado"),
     )
+
+
+class ReservaOperacion(Base):
+    __tablename__ = "reserva_operaciones"
+
+    operacion_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    libro_id: Mapped[int] = mapped_column(nullable=False)
+    ejemplar_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)
+    motivo: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    __table_args__ = (
+        Index("uq_reserva_activa_ejemplar", "ejemplar_id", unique=True,
+              sqlite_where=text("estado = 'RESERVADA'")),
+    )
+
+
+class LiberacionOperacion(Base):
+    __tablename__ = "liberacion_operaciones"
+
+    operacion_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)

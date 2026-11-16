@@ -18,7 +18,7 @@ if PROTOS_DIR not in sys.path:
 import catalogo_pb2
 import catalogo_pb2_grpc
 from src.seed import seed_database
-from src.database import engine, Base
+from src.database import engine, Base, migrar_esquema
 from src.server import CatalogoServicer
 
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 def inicializar_bd():
     """Crea las tablas en la base de datos de Catalogo si aun no existen."""
+    migrar_esquema()
     Base.metadata.create_all(bind=engine)
     logger.info("Base de datos de Catalogo inicializada correctamente.")
 
@@ -64,4 +65,3 @@ def serve():
 
 if __name__ == "__main__":
     serve()
-

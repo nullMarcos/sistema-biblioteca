@@ -15,9 +15,11 @@ RUN pip install --no-cache-dir -r /app/catalogo_service/requirements.txt && pip 
 
 COPY contracts/catalogo.proto /app/contracts/catalogo.proto
 COPY scripts/generar_protos.py /app/scripts/generar_protos.py
+COPY scripts/migrar_sqlite.py /app/scripts/migrar_sqlite.py
 RUN python scripts/generar_protos.py --output /app/protos
 COPY catalogo_service/main.py /app/main.py
 COPY catalogo_service/src /app/src
+COPY catalogo_service/migrations /app/migrations
 
 EXPOSE 50051
 
