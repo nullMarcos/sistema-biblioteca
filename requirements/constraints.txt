@@ -1,4 +1,4 @@
-# Unión de dependencias directas/transitivas de los cuatro servicios y sus pruebas.
+# Unión de dependencias directas/transitivas de los cinco servicios y sus pruebas.
 # Resolver con requirements-dev.txt; comprobar también builds Linux 3.14/3.12.
 # greenlet se instala condicionalmente en Linux por SQLAlchemy.
 annotated-doc==0.0.6

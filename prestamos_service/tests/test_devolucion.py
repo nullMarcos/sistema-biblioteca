@@ -124,11 +124,11 @@ def test_clave_de_devolucion_asociada_a_prestamo_y_actor(client, db, monkeypatch
     identificador, catalogo = prestar(db)
     monkeypatch.setattr(grpc_client, "liberar_ejemplar", catalogo.liberar_ejemplar)
     url = f"/v1/prestamos/{identificador}/devolucion"
-    assert client.post(url, headers={"Idempotency-Key": "actor", "X-User-ID": "uno"}).status_code == 200
-    conflicto = client.post(url, headers={"Idempotency-Key": "actor", "X-User-ID": "dos"})
+    assert client.post(url, headers={"Idempotency-Key": "actor", "X-User-ID": "uno", "X-User-Role": "admin"}).status_code == 200
+    conflicto = client.post(url, headers={"Idempotency-Key": "actor", "X-User-ID": "dos", "X-User-Role": "admin"})
     assert conflicto.status_code == 409
     assert conflicto.json()["codigo"] == "IDEMPOTENCIA_PAYLOAD_DISTINTO"
-    otro = client.post("/v1/prestamos/987654/devolucion", headers={"Idempotency-Key": "actor", "X-User-ID": "uno"})
+    otro = client.post("/v1/prestamos/987654/devolucion", headers={"Idempotency-Key": "actor", "X-User-ID": "uno", "X-User-Role": "admin"})
     assert otro.status_code == 409
 
 

@@ -50,6 +50,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al recurso o a la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Socio no encontrado
           content:
@@ -108,6 +114,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al recurso o a la operación
           content:
             application/json:
               schema:
@@ -174,6 +186,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al recurso o a la operación
           content:
             application/json:
               schema:
@@ -245,6 +263,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
           content:
             application/json:
               schema:
@@ -326,6 +350,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Socio ajeno o inyección de fallo no habilitada/autorizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Recurso no encontrado
           content:
@@ -358,12 +388,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '504':
           description: Tiempo de espera remoto agotado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Inyección de fallo no habilitada o actor no autorizado
           content:
             application/json:
               schema:
@@ -406,6 +430,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
           content:
             application/json:
               schema:
@@ -491,6 +521,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Recurso no encontrado
           content:
@@ -565,6 +601,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
           content:
             application/json:
               schema:
@@ -658,6 +700,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Recurso no encontrado
           content:
@@ -734,6 +782,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
           content:
             application/json:
               schema:
@@ -824,6 +878,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Identidad sin acceso al socio o a la operación
           content:
             application/json:
               schema:

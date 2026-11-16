@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--check", action="store_true", help="Fallar ante deriva sin modificar stubs")
     args = parser.parse_args()
     contrato = args.contract.resolve(strict=True)
-    destinos = args.output or [ROOT / f"{s}_service/protos" for s in ("catalogo", "prestamos")]
+    destinos = args.output or [ROOT / f"{s}_service/protos" for s in ("catalogo", "prestamos", "bff")]
     with tempfile.TemporaryDirectory(prefix="biblioteca-protos-") as temporal:
         subprocess.run([
             sys.executable, "-m", "grpc_tools.protoc", f"-I{contrato.parent}",

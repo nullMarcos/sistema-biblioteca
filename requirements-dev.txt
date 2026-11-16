@@ -2,6 +2,7 @@
 -r prestamos_service/requirements.txt
 -r sanciones_service/requirements.txt
 -r gateway_service/requirements.txt
+-r bff_service/requirements.txt
 pytest==9.2.0
 jsonschema==4.26.0
 rfc3339-validator==0.1.4

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def contratos():
     documentos = {}
     with tempfile.TemporaryDirectory(prefix="biblioteca-openapi-") as temporal:
-        for servicio in ("prestamos", "sanciones", "gateway"):
+        for servicio in ("prestamos", "sanciones", "gateway", "bff"):
             codigo = "import json, main; print(json.dumps(main.app.openapi()))"
             if servicio == "prestamos":
                 codigo += "; main.grpc_client.cerrar_canal()"
@@ -33,13 +33,31 @@ def contratos():
             documentos[servicio] = documento
 
     prestamos, sanciones, gateway = (documentos[s] for s in ("prestamos", "sanciones", "gateway"))
+    bff = copy.deepcopy(documentos["bff"])
+    bff["servers"] = [{"url": "/", "description": "Entrada pública de Gateway; usar su host y puerto"}]
+    bff["paths"] = {p: item for p, item in bff["paths"].items() if p.startswith("/bff/web/")}
+    bff["components"]["securitySchemes"] = {"HTTPBearer": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}
+    bff["info"]["description"] = "Contrato público web por Gateway. JWT y autorización por socio; API Key e identidad técnica son internas. EN_REVISION no autoriza entrega; desconocidos se representan como null."
+    for ruta, item in bff["paths"].items():
+        for operacion in item.values():
+            operacion["security"] = [{"HTTPBearer": []}]
+            operacion.setdefault("parameters", []).append({"name": "X-Request-Id", "in": "header", "required": False,
+                "description": "Correlación separada de Idempotency-Key; se genera si falta o no es válida",
+                "schema": {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"}})
+            for estado, respuesta in operacion["responses"].items():
+                cabeceras = respuesta.setdefault("headers", {})
+                cabeceras["X-Request-Id"] = {"schema": {"type": "string"}, "description": "Correlación de esta petición"}
+                if ruta.endswith("solicitar-prestamo"):
+                    cabeceras["Idempotency-Key"] = {"schema": {"type": "string"}, "description": "Identidad estable de la escritura, cuando se recibió una clave válida"}
+                if estado in {"429", "503"}:
+                    cabeceras["Retry-After"] = {"schema": {"type": "string"}, "description": "Espera sugerida cuando corresponda"}
     prestamos["info"]["description"] += " Contrato público equivalente: gateway.openapi.yaml."
     for ruta, item in prestamos["paths"].items():
         if ruta.startswith("/v1/"):
             item["x-public-path"] = "/api" + ruta
     # El proxy acepta rutas dinámicas; el contrato público concreta las operaciones soportadas.
     publico = copy.deepcopy(gateway)
-    publico["paths"] = {p: o for p, o in publico["paths"].items() if not p.startswith("/api/v1/")}
+    publico["paths"] = {p: o for p, o in publico["paths"].items() if not p.startswith(("/api/v1/", "/bff/"))}
     publico["components"]["schemas"].update(copy.deepcopy(prestamos["components"]["schemas"]))
     for ruta, item in prestamos["paths"].items():
         if not ruta.startswith("/v1/"):
@@ -60,7 +78,12 @@ def contratos():
                     "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
             operacion["operationId"] = "gateway_" + operacion["operationId"]
         publico["paths"]["/api" + ruta] = nuevo
-    return {"openapi.yaml": prestamos, "sanciones.openapi.yaml": sanciones, "gateway.openapi.yaml": publico}
+    for nombre, esquema in bff["components"]["schemas"].items():
+        if nombre in publico["components"]["schemas"] and publico["components"]["schemas"][nombre] != esquema:
+            raise ValueError(f"Schemas públicos incompatibles con el mismo nombre: {nombre}")
+        publico["components"]["schemas"][nombre] = esquema
+    publico["paths"].update(copy.deepcopy(bff["paths"]))
+    return {"openapi.yaml": prestamos, "sanciones.openapi.yaml": sanciones, "gateway.openapi.yaml": publico, "bff.openapi.yaml": bff}
 
 
 def main():

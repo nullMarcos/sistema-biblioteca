@@ -31,7 +31,7 @@ def verificar(proyecto, entorno, base_url, registrar=print):
         raise AssertionError(f"No hay contenedores en el proyecto {proyecto}")
     contenedores = json.loads(subprocess.check_output(["docker", "inspect", *ids], text=True))
     servicios = {c["Config"]["Labels"]["com.docker.compose.service"]: c for c in contenedores}
-    comprobar("cuatro servicios del proyecto", set(servicios) == {"gateway", "prestamos", "sanciones", "catalogo"})
+    comprobar("cinco servicios del proyecto", set(servicios) == {"gateway", "prestamos", "sanciones", "catalogo", "bff"})
     gateway = servicios["gateway"]
     config = dict(e.split("=", 1) for e in gateway["Config"]["Env"] if "=" in e)
     limite, ventana = int(config.get("RATE_LIMIT", "20")), float(config.get("RATE_WINDOW", "60"))
@@ -61,6 +61,7 @@ def verificar(proyecto, entorno, base_url, registrar=print):
     esperar_ventana()
     casos = [("health", api(puerto, "/health")[0], 200),
         ("sin JWT", api(puerto, "/api/v1/socios")[0], 401),
+        ("BFF sin JWT", api(puerto, "/bff/web/resumen-prestamos-socio/1")[0], 401),
         ("JWT inválido", api(puerto, "/api/v1/socios", "abc.def.ghi")[0], 401),
         ("API Key no sustituye JWT", api(puerto, "/api/v1/socios", headers_extra={"X-API-Key": "clave-enviada-por-cliente"})[0], 401),
         ("login inválido", api(puerto, "/auth/login", cuerpo={"username": "admin", "password": "mala"})[0], 401)]
@@ -75,10 +76,11 @@ def verificar(proyecto, entorno, base_url, registrar=print):
     comprobar("recurso inexistente", api(puerto, "/api/v1/xyz", token)[0] == 404)
     esperar_ventana()
     inicio = time.monotonic()
-    respuestas = Counter(api(puerto, "/api/v1/socios", token)[0] for _ in range(limite + 5))
+    respuestas = Counter(api(puerto, "/api/v1/socios" if i < limite else "/bff/web/resumen-prestamos-socio/1", token)[0]
+        for i in range(limite + 5))
     duracion = time.monotonic() - inicio
     comprobar("ráfaga dentro de una ventana", duracion < ventana, round(duracion, 3))
-    comprobar("rate limit efectivo", respuestas == Counter({200: limite, 429: 5}), dict(respuestas))
+    comprobar("rate limit compartido efectivo API/BFF", respuestas == Counter({200: limite, 429: 5}), dict(respuestas))
     if fallos:
         raise AssertionError(f"{len(fallos)} verificaciones fallaron: {', '.join(fallos)}")
     return {"proyecto": proyecto, "puerto": puerto, "rate_limit": limite, "rate_window_s": ventana,

@@ -1,0 +1,755 @@
+openapi: 3.1.0
+info:
+  title: BFF web de Biblioteca
+  description: Contrato público web por Gateway. JWT y autorización por socio; API Key e identidad técnica son internas.
+    EN_REVISION no autoriza entrega; desconocidos se representan como null.
+  version: 1.0.0
+paths:
+  /bff/web/resumen-prestamos-socio/{socio_id}:
+    get:
+      tags:
+      - BFF web
+      summary: Resumen Socio
+      description: Compone Préstamos, Catálogo gRPC y Sanciones por RUT. Los fallos de fuentes opcionales producen
+        200 parcial con desconocidos null.
+      operationId: resumen_socio_bff_web_resumen_prestamos_socio__socio_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: socio_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Socio Id
+      - name: X-Request-Id
+        in: header
+        required: false
+        description: Correlación separada de Idempotency-Key; se genera si falta o no es válida
+        schema:
+          type: string
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumenOut'
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Too Many Requests
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Retry-After:
+              schema:
+                type: string
+              description: Espera sugerida cuando corresponda
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal Server Error
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Retry-After:
+              schema:
+                type: string
+              description: Espera sugerida cuando corresponda
+        '504':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Gateway Timeout
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+  /bff/web/solicitar-prestamo:
+    post:
+      tags:
+      - BFF web
+      summary: Solicitar Prestamo
+      description: Delega una sola escritura a la Saga de Préstamos. EN_REVISION registra una solicitud, no autoriza
+        la entrega. Ante incertidumbre, repetir con la misma Idempotency-Key.
+      operationId: solicitar_prestamo_bff_web_solicitar_prestamo_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency-Key
+      - name: X-Request-Id
+        in: header
+        required: false
+        description: Correlación separada de Idempotency-Key; se genera si falta o no es válida
+        schema:
+          type: string
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitudInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitudOut'
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not Found
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Conflict
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Too Many Requests
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+            Retry-After:
+              schema:
+                type: string
+              description: Espera sugerida cuando corresponda
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal Server Error
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Gateway
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Service Unavailable
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+            Retry-After:
+              schema:
+                type: string
+              description: Espera sugerida cuando corresponda
+        '504':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Gateway Timeout
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Correlación de esta petición
+            Idempotency-Key:
+              schema:
+                type: string
+              description: Identidad estable de la escritura, cuando se recibió una clave válida
+components:
+  schemas:
+    Advertencia:
+      properties:
+        codigo:
+          type: string
+          title: Codigo
+        mensaje:
+          type: string
+          title: Mensaje
+        libro_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Libro Id
+      type: object
+      required:
+      - codigo
+      - mensaje
+      title: Advertencia
+    Dependencias:
+      properties:
+        prestamos:
+          type: string
+          enum:
+          - DISPONIBLE
+          - NO_CONSULTADO
+          - TIMEOUT
+          - NO_DISPONIBLE
+          - CIRCUITO_ABIERTO
+          - SATURADO
+          - RESPUESTA_INVALIDA
+          - NO_ENCONTRADO
+          - RECHAZADA
+          title: Prestamos
+        catalogo:
+          type: string
+          enum:
+          - DISPONIBLE
+          - NO_CONSULTADO
+          - TIMEOUT
+          - NO_DISPONIBLE
+          - CIRCUITO_ABIERTO
+          - SATURADO
+          - RESPUESTA_INVALIDA
+          - NO_ENCONTRADO
+          - RECHAZADA
+          title: Catalogo
+        sanciones:
+          type: string
+          enum:
+          - DISPONIBLE
+          - NO_CONSULTADO
+          - TIMEOUT
+          - NO_DISPONIBLE
+          - CIRCUITO_ABIERTO
+          - SATURADO
+          - RESPUESTA_INVALIDA
+          - NO_ENCONTRADO
+          - RECHAZADA
+          title: Sanciones
+      type: object
+      required:
+      - prestamos
+      - catalogo
+      - sanciones
+      title: Dependencias
+    ErrorResponse:
+      properties:
+        codigo:
+          type: string
+          title: Codigo
+        mensaje:
+          type: string
+          title: Mensaje
+      type: object
+      required:
+      - codigo
+      - mensaje
+      title: ErrorResponse
+    HealthOut:
+      properties:
+        status:
+          type: string
+          const: ok
+          title: Status
+          default: ok
+        service:
+          type: string
+          const: bff
+          title: Service
+          default: bff
+      type: object
+      title: HealthOut
+    PrestamoWeb:
+      properties:
+        id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Id
+        socio_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Socio Id
+        libro_id:
+          type: integer
+          maximum: 2147483647.0
+          exclusiveMinimum: 0.0
+          title: Libro Id
+        ejemplar_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Ejemplar Id
+        fecha_prestamo:
+          type: string
+          format: date-time
+          title: Fecha Prestamo
+        fecha_limite:
+          type: string
+          format: date
+          title: Fecha Limite
+        fecha_devolucion:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Devolucion
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_REVISION
+          - DEVOLUCION_PENDIENTE
+          - DEVUELTO
+          - ANULADO
+          - COMPENSADO
+          title: Estado
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        titulo:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Titulo
+        autor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Autor
+      type: object
+      required:
+      - id
+      - socio_id
+      - libro_id
+      - ejemplar_id
+      - fecha_prestamo
+      - fecha_limite
+      - estado
+      title: PrestamoWeb
+    ResumenOut:
+      properties:
+        socio:
+          $ref: '#/components/schemas/SocioWeb'
+        prestamos_activos:
+          items:
+            $ref: '#/components/schemas/PrestamoWeb'
+          type: array
+          title: Prestamos Activos
+        prestamos_en_revision:
+          items:
+            $ref: '#/components/schemas/PrestamoWeb'
+          type: array
+          title: Prestamos En Revision
+        prestamos_pendientes:
+          items:
+            $ref: '#/components/schemas/PrestamoWeb'
+          type: array
+          title: Prestamos Pendientes
+        sanciones:
+          $ref: '#/components/schemas/SancionesWeb'
+        parcial:
+          type: boolean
+          title: Parcial
+        dependencias:
+          $ref: '#/components/schemas/Dependencias'
+        advertencias:
+          items:
+            $ref: '#/components/schemas/Advertencia'
+          type: array
+          title: Advertencias
+        request_id:
+          type: string
+          title: Request Id
+      type: object
+      required:
+      - socio
+      - prestamos_activos
+      - prestamos_en_revision
+      - prestamos_pendientes
+      - sanciones
+      - parcial
+      - dependencias
+      - advertencias
+      - request_id
+      title: ResumenOut
+    SancionesWeb:
+      properties:
+        estado:
+          type: string
+          enum:
+          - VERIFICADO
+          - NO_REGISTRADO
+          - DESCONOCIDO
+          title: Estado
+        tiene_sancion:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Tiene Sancion
+        bloqueado:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Bloqueado
+        multas_pendientes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Multas Pendientes
+        monto_total_multas:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Monto Total Multas
+        motivo:
+          anyOf:
+          - type: string
+            enum:
+            - DISPONIBLE
+            - NO_CONSULTADO
+            - TIMEOUT
+            - NO_DISPONIBLE
+            - CIRCUITO_ABIERTO
+            - SATURADO
+            - RESPUESTA_INVALIDA
+            - NO_ENCONTRADO
+            - RECHAZADA
+          - type: 'null'
+          title: Motivo
+      type: object
+      required:
+      - estado
+      title: SancionesWeb
+    SocioWeb:
+      properties:
+        id:
+          type: integer
+          title: Id
+        nombre:
+          type: string
+          title: Nombre
+      type: object
+      required:
+      - id
+      - nombre
+      title: SocioWeb
+    SolicitudInput:
+      properties:
+        socio_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Socio Id
+        libro_id:
+          type: integer
+          maximum: 2147483647.0
+          exclusiveMinimum: 0.0
+          title: Libro Id
+      additionalProperties: false
+      type: object
+      required:
+      - socio_id
+      - libro_id
+      title: SolicitudInput
+    SolicitudOut:
+      properties:
+        id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Id
+        socio_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Socio Id
+        libro_id:
+          type: integer
+          maximum: 2147483647.0
+          exclusiveMinimum: 0.0
+          title: Libro Id
+        ejemplar_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Ejemplar Id
+        fecha_prestamo:
+          type: string
+          format: date-time
+          title: Fecha Prestamo
+        fecha_limite:
+          type: string
+          format: date
+          title: Fecha Limite
+        fecha_devolucion:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Devolucion
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_REVISION
+          - DEVOLUCION_PENDIENTE
+          - DEVUELTO
+          - ANULADO
+          - COMPENSADO
+          title: Estado
+        idempotency_key:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency Key
+        request_id:
+          type: string
+          title: Request Id
+      type: object
+      required:
+      - id
+      - socio_id
+      - libro_id
+      - ejemplar_id
+      - fecha_prestamo
+      - fecha_limite
+      - estado
+      - idempotency_key
+      - request_id
+      title: SolicitudOut
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+servers:
+- url: /
+  description: Entrada pública de Gateway; usar su host y puerto
