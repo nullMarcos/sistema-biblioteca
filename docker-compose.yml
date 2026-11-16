@@ -75,6 +75,38 @@ services:
       retries: 20
       start_period: 10s
 
+  bff:
+    build:
+      context: .
+      dockerfile: bff_service/Dockerfile
+    environment:
+      - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
+      - BFF_PRESTAMOS_URL=${BFF_PRESTAMOS_URL:-http://prestamos:8000}
+      - BFF_SANCIONES_URL=${BFF_SANCIONES_URL:-http://sanciones:8000}
+      - BFF_CATALOGO_TARGET=${BFF_CATALOGO_TARGET:-catalogo:50051}
+      - BFF_RESUMEN_TIMEOUT_SEGS=${BFF_RESUMEN_TIMEOUT_SEGS:-3}
+      - BFF_PRESTAMOS_TIMEOUT_SEGS=${BFF_PRESTAMOS_TIMEOUT_SEGS:-0.8}
+      - BFF_SANCIONES_TIMEOUT_SEGS=${BFF_SANCIONES_TIMEOUT_SEGS:-1.5}
+      - BFF_CATALOGO_TIMEOUT_SEGS=${BFF_CATALOGO_TIMEOUT_SEGS:-0.6}
+      - BFF_POST_TIMEOUT_SEGS=${BFF_POST_TIMEOUT_SEGS:-9}
+      - SAGA_TIMEOUT_SEGS=${SAGA_TIMEOUT_SEGS:-8}
+      - BFF_MAX_PETICIONES=${BFF_MAX_PETICIONES:-32}
+      - BFF_PRESTAMOS_MAX_CONCURRENT=${BFF_PRESTAMOS_MAX_CONCURRENT:-16}
+      - BFF_SANCIONES_MAX_CONCURRENT=${BFF_SANCIONES_MAX_CONCURRENT:-5}
+      - BFF_CATALOGO_MAX_CONCURRENT=${BFF_CATALOGO_MAX_CONCURRENT:-8}
+      - BFF_CATALOGO_POR_RESUMEN=${BFF_CATALOGO_POR_RESUMEN:-4}
+      - BFF_SANCIONES_CB_THRESHOLD=${BFF_SANCIONES_CB_THRESHOLD:-3}
+      - BFF_SANCIONES_CB_RECOVERY_SEGS=${BFF_SANCIONES_CB_RECOVERY_SEGS:-5}
+      - BFF_MAX_RESPUESTA_BYTES=${BFF_MAX_RESPUESTA_BYTES:-2097152}
+    networks:
+      - biblioteca_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
   gateway:
     build:
       context: .
@@ -83,14 +115,20 @@ services:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
       - PRESTAMOS_URL=http://prestamos:8000
+      - BFF_URL=http://bff:8000
       - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_cambiar}
       - GATEWAY_TIMEOUT_SEGS=${GATEWAY_TIMEOUT_SEGS:-10}
       - SAGA_TIMEOUT_SEGS=${SAGA_TIMEOUT_SEGS:-8}
+      - BFF_POST_TIMEOUT_SEGS=${BFF_POST_TIMEOUT_SEGS:-9}
+      - BFF_RESUMEN_TIMEOUT_SEGS=${BFF_RESUMEN_TIMEOUT_SEGS:-3}
+      - SOCIO1_SOCIO_ID=${SOCIO1_SOCIO_ID:-1}
       - RATE_LIMIT=${RATE_LIMIT:-20}
       - RATE_WINDOW=${RATE_WINDOW:-60}
     depends_on:
       prestamos:
+        condition: service_healthy
+      bff:
         condition: service_healthy
     networks:
       - biblioteca_net

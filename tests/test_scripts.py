@@ -15,8 +15,8 @@ import verificar_gateway
 def test_verificador_gateway_acumula_y_falla_el_comando(monkeypatch):
     contenedores = [{"Config": {"Labels": {"com.docker.compose.service": s}, "Env": ["RATE_LIMIT=2", "RATE_WINDOW=1"]},
         "NetworkSettings": {"Ports": {"8080/tcp": [{"HostPort": "8080"}]} if s == "gateway" else {}},
-        "HostConfig": {"PortBindings": {}}} for s in ("gateway", "catalogo", "prestamos", "sanciones")]
-    monkeypatch.setattr(verificar_gateway, "compose", lambda *args, **kwargs: "1 2 3 4")
+        "HostConfig": {"PortBindings": {}}} for s in ("gateway", "catalogo", "prestamos", "sanciones", "bff")]
+    monkeypatch.setattr(verificar_gateway, "compose", lambda *args, **kwargs: "1 2 3 4 5")
     monkeypatch.setattr(verificar_gateway.subprocess, "check_output", lambda *args, **kwargs: json.dumps(contenedores))
     monkeypatch.setattr(verificar_gateway.socket, "create_connection", lambda *args, **kwargs: nullcontext())
     monkeypatch.setattr(verificar_gateway.time, "sleep", lambda *args: None)

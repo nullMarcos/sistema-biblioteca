@@ -13,6 +13,7 @@ from src.saga import PrestamoSagaOrchestrator
 from src.routers.socios import crear_socio
 from src.saga import admission
 from src.saga.exceptions import SagaError
+from src.identity import Identidad
 
 
 class CatalogoFalso:
@@ -82,7 +83,7 @@ def test_duplicados_de_socio_son_409(db, campo):
     payload = {"rut": "22.222.222-2", "nombre": "Otra", "correo": "otra@example.com"}
     payload[campo] = "11.111.111-1" if campo == "rut" else "ana@example.com"
     with pytest.raises(HTTPException) as error:
-        crear_socio(SocioInput(**payload), db)
+        crear_socio(SocioInput(**payload), db, Identidad(None, "interno"))
     assert error.value.status_code == 409
 
 
@@ -183,7 +184,7 @@ def test_conflicto_en_commit_de_socio_es_409(db, campo):
         payload[campo] = "11.111.111-1" if campo == "rut" else "igual@example.com"
         with SesionConcurrente(bind=engine) as sesion:
             try:
-                crear_socio(SocioInput(**payload), sesion)
+                crear_socio(SocioInput(**payload), sesion, Identidad(None, "interno"))
                 return 201
             except HTTPException as exc:
                 assert exc.detail["codigo"] == ("RUT_DUPLICADO" if campo == "rut" else "CORREO_DUPLICADO")

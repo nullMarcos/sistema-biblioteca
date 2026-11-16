@@ -20,3 +20,6 @@ def test_contratos_estaticos_coinciden_con_fastapi_y_gateway_real():
     assert {"/api" + p for p in internos["paths"] if p.startswith("/v1/")} <= publicos["paths"].keys()
     assert not any("sanciones" in p or "chaos" in p for p in publicos["paths"])
     assert internos["paths"]["/v1/prestamos/{prestamo_id}"]["delete"]["deprecated"]
+    bff = yaml.safe_load((ROOT / "contracts/bff.openapi.yaml").read_text())
+    assert set(bff["paths"]) <= publicos["paths"].keys()
+    assert not any("internal" in ruta or "health" in ruta for ruta in bff["paths"])

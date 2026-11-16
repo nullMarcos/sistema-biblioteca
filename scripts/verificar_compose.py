@@ -41,7 +41,7 @@ def http(puerto, ruta, token=None, cuerpo=None):
 
 def inspeccionar(proyecto, entorno, puerto):
     ids = compose(proyecto, entorno, "ps", "--all", "--quiet", captura=True).split()
-    assert len(ids) == 4, f"{proyecto}: se esperaban cuatro contenedores"
+    assert len(ids) == 5, f"{proyecto}: se esperaban cinco contenedores"
     contenedores = json.loads(subprocess.check_output(["docker", "inspect", *ids], text=True))
     redes, volumenes = set(), set()
     for contenedor in contenedores:
@@ -53,6 +53,8 @@ def inspeccionar(proyecto, entorno, puerto):
             assert {b["HostPort"] for b in bindings["8080/tcp"]} == {str(puerto)}
         else:
             assert not bindings, f"Puerto interno publicado: {servicio}: {bindings}"
+        if servicio == "bff":
+            assert not contenedor["Mounts"], "BFF debe carecer de persistencia y montajes de otras bases"
         redes.update(contenedor["NetworkSettings"]["Networks"])
         volumenes.update(m["Name"] for m in contenedor["Mounts"] if m["Type"] == "volume")
     assert len(redes) == 1 and len(volumenes) == 3
@@ -60,7 +62,8 @@ def inspeccionar(proyecto, entorno, puerto):
         pass
     compose(proyecto, entorno, "exec", "-T", "prestamos", "python", "-c",
         "import socket, sys, urllib.request\n"
-        "[socket.getaddrinfo(s, None) for s in ('catalogo','prestamos','sanciones','gateway')]\n"
+        "[socket.getaddrinfo(s, None) for s in ('catalogo','prestamos','sanciones','bff','gateway')]\n"
+        "urllib.request.urlopen('http://bff:8000/health', timeout=3).close()\n"
         "urllib.request.urlopen('http://sanciones:8000/health', timeout=3).close()\n"
         "sys.path.insert(0, '/app/protos')\n"
         "import grpc, catalogo_pb2 as pb, catalogo_pb2_grpc as rpc\n"
