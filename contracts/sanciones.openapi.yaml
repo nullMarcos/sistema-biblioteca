@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: API de Sanciones - Red de Bibliotecas
+  description: API REST interna de sanciones. No se publica por Gateway. Correlación por RUT; controles de caos
+    solo en la red interna.
+  version: 1.0.0
+paths:
+  /chaos/delay:
+    get:
+      tags:
+      - Caos
+      summary: Set Chaos Delay
+      description: Configura latencia artificial en llamadas al servicio de Sanciones.
+      operationId: set_chaos_delay_chaos_delay_get
+      deprecated: true
+      parameters:
+      - name: seconds
+        in: query
+        required: true
+        schema:
+          type: number
+          minimum: 0.0
+          description: Segundos de latencia artificial a inducir
+          title: Seconds
+        description: Segundos de latencia artificial a inducir
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+    post:
+      tags:
+      - Caos
+      summary: Set Chaos Delay
+      description: Configura latencia artificial en llamadas al servicio de Sanciones.
+      operationId: set_chaos_delay_chaos_delay_post
+      parameters:
+      - name: seconds
+        in: query
+        required: true
+        schema:
+          type: number
+          minimum: 0.0
+          description: Segundos de latencia artificial a inducir
+          title: Seconds
+        description: Segundos de latencia artificial a inducir
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+  /chaos/fault:
+    get:
+      tags:
+      - Caos
+      summary: Set Chaos Fault
+      description: Configura una falla HTTP forzada (ej. 500) en llamadas al servicio.
+      operationId: set_chaos_fault_chaos_fault_get
+      deprecated: true
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Código de estado HTTP de falla a retornar (ej. 500)
+          default: 500
+          title: Status
+        description: Código de estado HTTP de falla a retornar (ej. 500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+    post:
+      tags:
+      - Caos
+      summary: Set Chaos Fault
+      description: Configura una falla HTTP forzada (ej. 500) en llamadas al servicio.
+      operationId: set_chaos_fault_chaos_fault_post
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: integer
+          description: Código de estado HTTP de falla a retornar (ej. 500)
+          default: 500
+          title: Status
+        description: Código de estado HTTP de falla a retornar (ej. 500)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+  /chaos/reset:
+    get:
+      tags:
+      - Caos
+      summary: Reset Chaos
+      description: Restaura el comportamiento normal del servicio, eliminando retardos y fallas forzadas.
+      operationId: reset_chaos_chaos_reset_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      deprecated: true
+    post:
+      tags:
+      - Caos
+      summary: Reset Chaos
+      description: Restaura el comportamiento normal del servicio, eliminando retardos y fallas forzadas.
+      operationId: reset_chaos_chaos_reset_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chaos/status:
+    get:
+      tags:
+      - Caos
+      summary: Get Chaos Status
+      description: Consulta el estado actual de inyección de fallas y retardos.
+      operationId: get_chaos_status_chaos_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChaosState'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/sanciones/socios/{identificador}:
+    get:
+      tags:
+      - Sanciones
+      summary: Consultar Sanciones Socio
+      description: 'Consulta si un socio tiene sanciones activas (bloqueos o multas pendientes).
+
+        El parámetro `identificador` admite tanto el RUT (''11.111.111-1'') como el ID numérico (ej. ''1'').'
+      operationId: consultar_sanciones_socio_v1_sanciones_socios__identificador__get
+      parameters:
+      - name: identificador
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Identificador
+      responses:
+        '200':
+          description: Detalle de sanciones del socio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SancionSocioResponse'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/sanciones/socios:
+    get:
+      tags:
+      - Sanciones
+      summary: Listar Sanciones Socios
+      description: Lista todos los socios y el resumen de sus sanciones, con filtro opcional por RUT.
+      operationId: listar_sanciones_socios_v1_sanciones_socios_get
+      parameters:
+      - name: rut
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rut
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SancionSocioResponse'
+                title: Response Listar Sanciones Socios V1 Sanciones Socios Get
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad Request
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Default Response
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health Check
+      description: Verifica el estado operativo del microservicio de Sanciones y su conexión SQLite.
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Servicio de sanciones operativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Base de datos no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    BloqueoOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        motivo:
+          type: string
+          title: Motivo
+        fecha_inicio:
+          type: string
+          format: date-time
+          title: Fecha Inicio
+        fecha_fin:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Fin
+        estado:
+          type: string
+          title: Estado
+      type: object
+      required:
+      - id
+      - motivo
+      - fecha_inicio
+      - estado
+      title: BloqueoOut
+    ChaosState:
+      properties:
+        delay_seconds:
+          type: number
+          title: Delay Seconds
+        fault_status:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Fault Status
+      type: object
+      required:
+      - delay_seconds
+      title: ChaosState
+    DependencyStatus:
+      properties:
+        database:
+          type: string
+          title: Database
+      type: object
+      required:
+      - database
+      title: DependencyStatus
+    ErrorResponse:
+      properties:
+        codigo:
+          type: string
+          title: Codigo
+        mensaje:
+          type: string
+          title: Mensaje
+      type: object
+      required:
+      - codigo
+      - mensaje
+      title: ErrorResponse
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        service:
+          type: string
+          title: Service
+        dependencies:
+          $ref: '#/components/schemas/DependencyStatus'
+      type: object
+      required:
+      - status
+      - service
+      - dependencies
+      title: HealthResponse
+    MultaOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        tipo:
+          type: string
+          title: Tipo
+        libro_id:
+          type: integer
+          title: Libro Id
+        ejemplar_id:
+          type: integer
+          title: Ejemplar Id
+        dias_atraso:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Dias Atraso
+        monto:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Monto
+        estado:
+          type: string
+          title: Estado
+        fecha_emision:
+          type: string
+          format: date-time
+          title: Fecha Emision
+        fecha_pago:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Pago
+      type: object
+      required:
+      - id
+      - tipo
+      - libro_id
+      - ejemplar_id
+      - estado
+      - fecha_emision
+      title: MultaOut
+    SancionSocioResponse:
+      properties:
+        socio_id:
+          type: integer
+          title: Socio Id
+        rut:
+          type: string
+          title: Rut
+        nombre:
+          type: string
+          title: Nombre
+        tiene_sancion:
+          type: boolean
+          title: Tiene Sancion
+        bloqueado:
+          type: boolean
+          title: Bloqueado
+        multas_pendientes:
+          type: integer
+          title: Multas Pendientes
+        monto_total_multas:
+          type: number
+          title: Monto Total Multas
+        bloqueos_activos:
+          items:
+            $ref: '#/components/schemas/BloqueoOut'
+          type: array
+          title: Bloqueos Activos
+        multas_activas:
+          items:
+            $ref: '#/components/schemas/MultaOut'
+          type: array
+          title: Multas Activas
+      type: object
+      required:
+      - socio_id
+      - rut
+      - nombre
+      - tiene_sancion
+      - bloqueado
+      - multas_pendientes
+      - monto_total_multas
+      title: SancionSocioResponse
+servers:
+- url: http://sanciones:8000
+  description: Solo red interna Compose

@@ -1,360 +1,916 @@
-openapi: 3.0.4
-
+openapi: 3.1.0
 info:
-  title: API de la Biblioteca (Prestamos y Sanciones)
-  version: "1.0.0"
-
+  title: API de Préstamos - Red de Bibliotecas
+  description: 'API REST interna con X-API-Key. Gateway publica /v1/socios y /v1/prestamos bajo /api/v1 con JWT;
+    /health es diagnóstico interno. Contrato público equivalente: gateway.openapi.yaml.'
+  version: 1.0.0
 paths:
-
   /v1/socios:
     get:
-      summary: Listar socios
+      tags:
+      - Socios
+      summary: Listar Socios
+      operationId: listar_socios_v1_socios_get
+      security:
+      - APIKeyHeader: []
       parameters:
-        - name: rut
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filtra por coincidencia exacta de RUT.
+      - name: rut
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rut
       responses:
         '200':
-          description: Lista de socios
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Socio'
+                  $ref: '#/components/schemas/SocioOut'
+                title: Response Listar Socios V1 Socios Get
+        '400':
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
-
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Base de datos temporalmente ocupada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
-      summary: Registrar un socio
+      tags:
+      - Socios
+      summary: Crear Socio
+      operationId: crear_socio_v1_socios_post
+      security:
+      - APIKeyHeader: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Socio_Input'
+              $ref: '#/components/schemas/SocioInput'
       responses:
         '201':
-          description: Socio creado
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Socio'
+                $ref: '#/components/schemas/SocioOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
-        '401':
-          $ref: '#/components/responses/No_Autorizado'
-        '409':
-          description: RUT o correo duplicado, incluido conflicto concurrente de BD
+          description: Error en la solicitud
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Base de datos temporalmente ocupada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/socios
   /v1/socios/{socio_id}:
     get:
-      summary: Consultar un socio
+      tags:
+      - Socios
+      summary: Consultar Socio
+      operationId: consultar_socio_v1_socios__socio_id__get
+      security:
+      - APIKeyHeader: []
       parameters:
-        - name: socio_id
-          in: path
-          required: true
-          schema:
-            type: integer
+      - name: socio_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Socio Id
       responses:
         '200':
-          description: Socio encontrado
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Socio'
+                $ref: '#/components/schemas/SocioOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/No_Encontrado'
-
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Base de datos temporalmente ocupada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/socios/{socio_id}
   /v1/prestamos:
     get:
-      summary: Listar prestamos
+      tags:
+      - Prestamos
+      summary: Listar Prestamos
+      description: Se filtra por el parámetro [estado], si es None se listan todos los préstamos.
+      operationId: listar_prestamos_v1_prestamos_get
+      security:
+      - APIKeyHeader: []
       parameters:
-        - name: estado
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filtra por coincidencia exacta. Si se omite, se listan todos; el servicio no valida una enumeración de valores.
+      - name: estado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Estado
       responses:
         '200':
-          description: Lista de prestamos
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Prestamo'
+                  $ref: '#/components/schemas/PrestamoOut'
+                title: Response Listar Prestamos V1 Prestamos Get
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
-
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
-      summary: Registra un prestamo
+      tags:
+      - Prestamos
+      summary: Crear Prestamo
+      description: 'Registra el préstamo de un libro ejecutando la transacción distribuida con el patrón Saga.
+
+        Coordina Reserva en Catálogo, Verificación en Sanciones y Persistencia en Préstamos.'
+      operationId: crear_prestamo_v1_prestamos_post
+      security:
+      - APIKeyHeader: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Prestamo_Input'
+              $ref: '#/components/schemas/PrestamoInput'
       responses:
         '201':
-          description: Prestamo creado
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Prestamo'
+                $ref: '#/components/schemas/PrestamoOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: No existe el socio o el libro solicitado
+          description: Recurso no encontrado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Sin stock, socio sancionado, duplicado socio/libro, cupo agotado, clave incompatible u operación pendiente
+          description: Conflicto en la operación
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '503':
-          $ref: '#/components/responses/Catalogo_No_Disponible'
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '502':
-          $ref: '#/components/responses/Error_Catalogo'
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '504':
-          $ref: '#/components/responses/Catalogo_Timeout'
-
-  /v1/prestamos/{prestamo_id}:
-    parameters:
-        - name: prestamo_id
-          in: path
-          required: true
-          schema:
-            type: integer
-
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Inyección de fallo no habilitada o actor no autorizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos
+  /v1/prestamos/saga/{saga_id}:
     get:
-      summary: Consulta un prestamo
+      tags:
+      - Prestamos
+      summary: Consultar Estado Saga
+      description: Consulta el estado auditado de una transacción Saga por su UUID.
+      operationId: consultar_estado_saga_v1_prestamos_saga__saga_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: saga_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Saga Id
       responses:
         '200':
-          description: Prestamo encontrado
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Prestamo'
+                $ref: '#/components/schemas/SagaStatusOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/No_Encontrado'
-                
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos/saga/{saga_id}
+  /v1/prestamos/saga/idempotency/{idempotency_key}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Saga Por Idempotencia
+      description: Consulta el estado de una transacción Saga por su clave de idempotencia.
+      operationId: consultar_saga_por_idempotencia_v1_prestamos_saga_idempotency__idempotency_key__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: idempotency_key
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStatusOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos/saga/idempotency/{idempotency_key}
+  /v1/prestamos/{prestamo_id}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Prestamo
+      operationId: consultar_prestamo_v1_prestamos__prestamo_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     delete:
+      tags:
+      - Prestamos
+      summary: Eliminar Prestamo
+      description: Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar.
+      operationId: eliminar_prestamo_v1_prestamos__prestamo_id__delete
       deprecated: true
-      summary: Alias obsoleto de POST devolución
-      description: Comparte el mismo caso de uso durable y la misma identidad de POST /v1/prestamos/{prestamo_id}/devolucion. No elimina registros.
+      security:
+      - APIKeyHeader: []
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency-Key
       responses:
         '200':
-          description: Préstamo devuelto; el registro se conserva
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Prestamo'
-        '404':
-          $ref: '#/components/responses/No_Encontrado'
+                $ref: '#/components/schemas/PrestamoOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
-        '401':
-          $ref: '#/components/responses/No_Autorizado'
-        '409':
-          description: Préstamo ya devuelto sin replay válido, transición inválida, operación pendiente, identidad incompatible o reserva legacy sin conciliar
+          description: Error en los parámetros de la solicitud
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '503':
-          $ref: '#/components/responses/Catalogo_No_Disponible'
-        '502':
-          $ref: '#/components/responses/Error_Catalogo'
-        '504':
-          $ref: '#/components/responses/Catalogo_Timeout'
-
-  /v1/prestamos/{prestamo_id}/devolucion:
-    post:
-      summary: Devolver un préstamo o cancelar su revisión
-      description: >-
-        ACTIVO pasa a DEVOLUCION_PENDIENTE y después a DEVUELTO. EN_REVISION se cancela
-        por el mismo flujo a ANULADO, sin aprobar ni entregar el ejemplar. Se persisten
-        intención, propietario y resultado. Si falla después de liberar, el préstamo
-        permanece pendiente hasta finalizar localmente; nunca se reserva otra copia.
-        Misma clave, préstamo y actor repiten el resultado original. Si se omite la
-        clave, se genera una que se devuelve en idempotency_key; una nueva petición
-        sin clave sobre DEVUELTO produce 409. ANULADO/COMPENSADO no admiten transición.
-      parameters:
-        - name: prestamo_id
-          in: path
-          required: true
-          schema: { type: integer }
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '200':
-          description: Devolución confirmada o cancelación de revisión confirmada; replay estable
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Prestamo'
-        '400':
-          $ref: '#/components/responses/Error_Generico'
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/No_Encontrado'
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Transición inválida, pendiente, clave incompatible o reserva anterior sin identidad
+          description: Conflicto en la operación
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '502':
-          $ref: '#/components/responses/Error_Catalogo'
-        '503':
-          description: Indisponibilidad o finalización local pendiente de recuperación; no confirma éxito
+          description: Respuesta remota inválida o error de protocolo
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '504':
-          $ref: '#/components/responses/Catalogo_Timeout'
-
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos/{prestamo_id}
   /v1/prestamos/devoluciones/idempotency/{idempotency_key}:
     get:
-      summary: Consultar el progreso durable de una devolución
+      tags:
+      - Prestamos
+      summary: Consultar Devolucion
+      operationId: consultar_devolucion_v1_prestamos_devoluciones_idempotency__idempotency_key__get
+      security:
+      - APIKeyHeader: []
       parameters:
-        - name: idempotency_key
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/Clave_Idempotencia'
+      - name: idempotency_key
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency Key
       responses:
         '200':
-          description: Estado auditado de devolución
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DevolucionStatus'
+                $ref: '#/components/schemas/DevolucionStatusOut'
         '400':
-          $ref: '#/components/responses/Error_Generico'
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          $ref: '#/components/responses/No_Autorizado'
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/No_Encontrado'
-
-  /v1/sanciones/socios:
-    get:
-      summary: Listar estado de sanciones de todos los socios
-      parameters:
-        - name: rut
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filtra por coincidencia exacta de RUT.
-      responses:
-        '200':
-          description: Resumen de sanciones de socios
+          description: Recurso no encontrado
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SancionSocioResponse'
-
-  /v1/sanciones/socios/{identificador}:
-    get:
-      summary: Consultar sanciones de un socio
-      parameters:
-        - name: identificador
-          in: path
-          required: true
-          description: Identificador del socio (RUT o ID numérico)
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Detalle de sanciones del socio
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SancionSocioResponse'
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos/devoluciones/idempotency/{idempotency_key}
+  /v1/prestamos/{prestamo_id}/devolucion:
+    post:
+      tags:
+      - Prestamos
+      summary: Eliminar Prestamo
+      description: Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar.
+      operationId: eliminar_prestamo_v1_prestamos__prestamo_id__devolucion_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: API Key ausente o inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          $ref: '#/components/responses/No_Encontrado'
-
-  /chaos/delay:
-    post:
-      summary: Inducir latencia artificial en el servicio de Sanciones
-      parameters:
-        - name: seconds
-          in: query
-          required: true
-          schema:
-            type: number
-            format: float
-          description: Segundos de retraso artificial
-      responses:
-        '200':
-          description: Latencia artificial configurada
-
-  /chaos/fault:
-    post:
-      summary: Inducir falla HTTP controlada en el servicio de Sanciones
-      parameters:
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 500
-          description: Código HTTP de falla (ej. 500)
-      responses:
-        '200':
-          description: Falla HTTP configurada
-
-  /chaos/reset:
-    post:
-      summary: Restablecer comportamiento normal del servicio de Sanciones
-      responses:
-        '200':
-          description: Módulo de caos restablecido
-
-  /chaos/status:
-    get:
-      summary: Consultar estado actual del módulo de caos
-      responses:
-        '200':
-          description: Estado actual del módulo de caos
+          description: Recurso no encontrado
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChaosState'
-
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta remota inválida o error de protocolo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Indisponibilidad, circuito abierto o recuperación pendiente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera remoto agotado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-public-path: /api/v1/prestamos/{prestamo_id}/devolucion
+  /internal/resiliencia:
+    get:
+      tags:
+      - Diagnostico
+      summary: Metricas Resiliencia
+      description: Métricas por proceso y presupuestos efectivos. Solo red interna; no se publica por Gateway.
+      operationId: metricas_resiliencia_internal_resiliencia_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Validación inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - APIKeyHeader: []
   /health:
     get:
-      summary: Estado del servicio y sus dependencias
-      security: []
+      tags:
+      - Health
+      summary: Health Check
+      description: 'Chequeo de salud integrado:
+
+        - Verifica conexión a la base de datos SQLite local.
+
+        - Verifica conectividad con el servicio gRPC de Catálogo.
+
+        - Reporta el estado actual del Circuit Breaker (closed, open, half_open).'
+      operationId: health_check_health_get
       responses:
         '200':
           description: Servicio y dependencias operativas
@@ -362,247 +918,377 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+        '400':
+          description: Validación inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '503':
-          description: Una o más dependencias críticas no están disponibles
+          description: Una o más dependencias críticas no disponibles
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
-
-security:
-  - ApiKeyAuth: []
-
 components:
-  parameters:
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
-      description: Identidad de devolución ligada al préstamo y actor. Conservarla para repetir el mismo comando.
-      schema:
-        $ref: '#/components/schemas/Clave_Idempotencia'
-
   schemas:
-    
-    # --- SOCIO ---
-
-    Socio_Input:
-      type: object
-      required: [rut, nombre, correo]
+    DependencyStatus:
       properties:
-        rut: { type: string, example: "11.111.111-1" }
-        nombre: { type: string }
-        correo: { type: string, format: email }
-
-    Socio:
-      allOf:
-        - $ref: '#/components/schemas/Socio_Input'
-        - type: object
-          required: [id]
-          properties:
-            id: { type: integer }
-            prestamos:
-              type: array
-              default: []
-              items:
-                $ref: '#/components/schemas/Prestamo'
-
-    # --- PRESTAMO ---
-
-    Prestamo_Input:
+        database:
+          type: string
+          title: Database
+        catalogo_grpc:
+          type: string
+          title: Catalogo Grpc
+        circuit_breaker:
+          type: string
+          title: Circuit Breaker
+        sanciones_circuit_breaker:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sanciones Circuit Breaker
       type: object
-      required: [socio_id, libro_id]
+      required:
+      - database
+      - catalogo_grpc
+      - circuit_breaker
+      title: DependencyStatus
+    DevolucionStatusOut:
       properties:
-        socio_id: { type: integer, minimum: 1 }
-        libro_id: { type: integer, minimum: 1, maximum: 2147483647 }
+        operacion_id:
+          type: string
+          title: Operacion Id
         idempotency_key:
           type: string
-          nullable: true
-          minLength: 1
-          maxLength: 64
-          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
-          description: Clave de solicitud ligada al payload y actor. Si se omite, se genera una y se devuelve.
-
-    Prestamo:
-      allOf:
-        - $ref: '#/components/schemas/Prestamo_Input'
-        - type: object
-          required: [id, ejemplar_id, fecha_prestamo, fecha_limite, fecha_devolucion, estado]
-          properties:
-            id: { type: integer }
-            ejemplar_id: { type: integer }
-            fecha_prestamo: { type: string, format: date-time}
-            fecha_limite: { type: string, format: date}
-            fecha_devolucion: { type: string, format: date-time, nullable: true}
-            estado:
-              type: string
-              description: EN_REVISION no autoriza entrega. DEVOLUCION_PENDIENTE retiene cupo hasta confirmar el cierre.
-              enum: [ACTIVO, EN_REVISION, DEVOLUCION_PENDIENTE, DEVUELTO, ANULADO, COMPENSADO]
-            _links:
-              type: object
-              description: ACTIVO ofrece devolver por POST; EN_REVISION ofrece cancelar por POST. Sin acciones de escritura en pendientes o terminales.
-              additionalProperties:
-                type: object
-                properties:
-                  href: { type: string }
-                  method: { type: string }
-
-    Clave_Idempotencia:
-      type: string
-      minLength: 1
-      maxLength: 64
-      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
-
-    DevolucionStatus:
+          title: Idempotency Key
+        prestamo_id:
+          type: integer
+          title: Prestamo Id
+        reserva_id:
+          type: string
+          title: Reserva Id
+        estado:
+          type: string
+          enum:
+          - PENDIENTE
+          - COMPLETADA
+          title: Estado
+        estado_final:
+          type: string
+          enum:
+          - DEVUELTO
+          - ANULADO
+          title: Estado Final
+        accion_pendiente:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Accion Pendiente
+        error_detalle:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detalle
+        recuperacion_intentos:
+          type: integer
+          title: Recuperacion Intentos
+        proximo_intento:
+          type: number
+          title: Proximo Intento
+        lease_until:
+          type: number
+          title: Lease Until
+        fecha_creacion:
+          type: string
+          format: date-time
+          title: Fecha Creacion
+        fecha_actualizacion:
+          type: string
+          format: date-time
+          title: Fecha Actualizacion
       type: object
-      required: [operacion_id, idempotency_key, prestamo_id, reserva_id, estado, estado_final,
-        recuperacion_intentos, proximo_intento, lease_until, fecha_creacion, fecha_actualizacion]
+      required:
+      - operacion_id
+      - idempotency_key
+      - prestamo_id
+      - reserva_id
+      - estado
+      - estado_final
+      - recuperacion_intentos
+      - proximo_intento
+      - lease_until
+      - fecha_creacion
+      - fecha_actualizacion
+      title: DevolucionStatusOut
+    ErrorResponse:
       properties:
-        operacion_id: { type: string }
-        idempotency_key:
-          $ref: '#/components/schemas/Clave_Idempotencia'
-        prestamo_id: { type: integer }
-        reserva_id: { type: string }
-        estado: { type: string, enum: [PENDIENTE, COMPLETADA] }
-        estado_final: { type: string, enum: [DEVUELTO, ANULADO] }
-        accion_pendiente: { type: string, nullable: true }
-        error_detalle: { type: string, nullable: true }
-        recuperacion_intentos: { type: integer }
-        proximo_intento: { type: number, description: Instante Unix de elegibilidad; requiere además lease vencido }
-        lease_until: { type: number, description: Vencimiento del lease en tiempo Unix }
-        fecha_creacion: { type: string, format: date-time }
-        fecha_actualizacion: { type: string, format: date-time }
-
-    # --- SANCIONES ---
-
-    Bloqueo:
+        codigo:
+          type: string
+          title: Codigo
+        mensaje:
+          type: string
+          title: Mensaje
       type: object
-      required: [id, motivo, fecha_inicio, estado]
-      properties:
-        id: { type: integer }
-        motivo: { type: string }
-        fecha_inicio: { type: string, format: date-time }
-        fecha_fin: { type: string, format: date-time, nullable: true }
-        estado: { type: string, example: "ACTIVO" }
-
-    Multa:
-      type: object
-      required: [id, tipo, libro_id, ejemplar_id, estado, fecha_emision]
-      properties:
-        id: { type: integer }
-        tipo: { type: string, example: "ATRASO" }
-        libro_id: { type: integer }
-        ejemplar_id: { type: integer }
-        dias_atraso: { type: integer, nullable: true }
-        monto: { type: number, format: float, nullable: true }
-        estado: { type: string, example: "PENDIENTE" }
-        fecha_emision: { type: string, format: date-time }
-        fecha_pago: { type: string, format: date-time, nullable: true }
-
-    SancionSocioResponse:
-      type: object
-      required: [socio_id, rut, nombre, tiene_sancion, bloqueado, multas_pendientes, monto_total_multas]
-      properties:
-        socio_id: { type: integer }
-        rut: { type: string, example: "11.111.111-1" }
-        nombre: { type: string }
-        tiene_sancion: { type: boolean }
-        bloqueado: { type: boolean }
-        multas_pendientes: { type: integer }
-        monto_total_multas: { type: number, format: float }
-        bloqueos_activos:
-          type: array
-          items:
-            $ref: '#/components/schemas/Bloqueo'
-        multas_activas:
-          type: array
-          items:
-            $ref: '#/components/schemas/Multa'
-
-    ChaosState:
-      type: object
-      required: [delay_seconds]
-      properties:
-        delay_seconds: { type: number, format: float }
-        fault_status: { type: integer, nullable: true }
-
-    # --- ERROR ---
-    Error:
-      type: object
-      required: [codigo, mensaje]
-      properties:
-        codigo: { type: string }
-        mensaje: { type: string }
-
-    DependencyStatus:
-      type: object
-      required: [database, catalogo_grpc, circuit_breaker]
-      properties:
-        database: { type: string }
-        catalogo_grpc: { type: string }
-        circuit_breaker: { type: string }
-        sanciones_circuit_breaker: { type: string }
-
+      required:
+      - codigo
+      - mensaje
+      title: ErrorResponse
     HealthResponse:
-      type: object
-      required: [status, service, dependencies]
       properties:
-        status: { type: string }
-        service: { type: string }
+        status:
+          type: string
+          title: Status
+        service:
+          type: string
+          title: Service
         dependencies:
           $ref: '#/components/schemas/DependencyStatus'
-
+      type: object
+      required:
+      - status
+      - service
+      - dependencies
+      title: HealthResponse
+    PrestamoInput:
+      properties:
+        socio_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Socio Id
+        libro_id:
+          type: integer
+          maximum: 2147483647.0
+          exclusiveMinimum: 0.0
+          title: Libro Id
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency Key
+          description: Identidad estable de la solicitud
+        simular_fallo_paso3:
+          type: boolean
+          title: Simular Fallo Paso3
+          description: 'Solo demostración: requiere HABILITAR_FALLOS_DEMO=true y actor administrador; de otro modo
+            devuelve 403'
+          default: false
+      type: object
+      required:
+      - socio_id
+      - libro_id
+      title: PrestamoInput
+    PrestamoOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        socio_id:
+          type: integer
+          title: Socio Id
+        libro_id:
+          type: integer
+          title: Libro Id
+        ejemplar_id:
+          type: integer
+          title: Ejemplar Id
+        fecha_prestamo:
+          type: string
+          format: date-time
+          title: Fecha Prestamo
+        fecha_limite:
+          type: string
+          format: date
+          title: Fecha Limite
+        fecha_devolucion:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Devolucion
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_REVISION
+          - DEVOLUCION_PENDIENTE
+          - DEVUELTO
+          - ANULADO
+          - COMPENSADO
+          title: Estado
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        _links:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Links
+          description: Enlaces internos /v1. ACTIVO ofrece devolver por POST; EN_REVISION cancelar por POST. Gateway
+            publica /api/v1.
+      type: object
+      required:
+      - id
+      - socio_id
+      - libro_id
+      - ejemplar_id
+      - fecha_prestamo
+      - fecha_limite
+      - estado
+      title: PrestamoOut
+    SagaStatusOut:
+      properties:
+        saga_id:
+          type: string
+          title: Saga Id
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        socio_id:
+          type: integer
+          title: Socio Id
+        libro_id:
+          type: integer
+          title: Libro Id
+        ejemplar_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Ejemplar Id
+        prestamo_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Prestamo Id
+        estado:
+          type: string
+          enum:
+          - INICIADA
+          - EJEMPLAR_RESERVADO
+          - SANCIONES_VERIFICADAS
+          - COMPLETADA
+          - COMPENSANDO
+          - COMPENSACION_PENDIENTE
+          - COMPENSADA
+          - FALLIDA
+          title: Estado
+        paso_actual:
+          type: string
+          title: Paso Actual
+        error_detalle:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detalle
+        reserva_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reserva Id
+        accion_pendiente:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Accion Pendiente
+        recuperacion_intentos:
+          type: integer
+          title: Recuperacion Intentos
+          default: 0
+        proximo_intento:
+          type: number
+          title: Proximo Intento
+          default: 0
+        lease_until:
+          type: number
+          title: Lease Until
+          default: 0
+        fecha_creacion:
+          type: string
+          format: date-time
+          title: Fecha Creacion
+        fecha_actualizacion:
+          type: string
+          format: date-time
+          title: Fecha Actualizacion
+      type: object
+      required:
+      - saga_id
+      - socio_id
+      - libro_id
+      - estado
+      - paso_actual
+      - fecha_creacion
+      - fecha_actualizacion
+      title: SagaStatusOut
+    SocioInput:
+      properties:
+        rut:
+          type: string
+          maxLength: 12
+          title: Rut
+          description: RUT del socio (ej. 11.111.111-1)
+        nombre:
+          type: string
+          title: Nombre
+        correo:
+          type: string
+          format: email
+          title: Correo
+      type: object
+      required:
+      - rut
+      - nombre
+      - correo
+      title: SocioInput
+    SocioOut:
+      properties:
+        rut:
+          type: string
+          maxLength: 12
+          title: Rut
+          description: RUT del socio (ej. 11.111.111-1)
+        nombre:
+          type: string
+          title: Nombre
+        correo:
+          type: string
+          format: email
+          title: Correo
+        id:
+          type: integer
+          title: Id
+        prestamos:
+          items:
+            $ref: '#/components/schemas/PrestamoOut'
+          type: array
+          title: Prestamos
+          default: []
+      type: object
+      required:
+      - rut
+      - nombre
+      - correo
+      - id
+      title: SocioOut
   securitySchemes:
-
-  # --- AUTENTICACION POR API KEY ---
-
-    ApiKeyAuth:
+    APIKeyHeader:
       type: apiKey
       in: header
       name: X-API-Key
-
-  responses:
-
-    # --- ERRORES ---
-
-    Error_Generico:
-      description: Error de validación de parámetros o body
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-    No_Autorizado:
-      description: Falta una API Key válida o la clave enviada no es correcta
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-    No_Encontrado:
-      description: El recurso solicitado no existe
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-    Catalogo_No_Disponible:
-      description: Catálogo no disponible o circuito abierto. Una escritura puede permanecer pendiente; consultar su identidad antes de crear otra.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-    Error_Catalogo:
-      description: Error no clasificado al comunicarse con Catálogo
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-    Catalogo_Timeout:
-      description: Catálogo no respondió antes de vencer el timeout
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+servers:
+- url: http://prestamos:8000
+  description: Solo red interna Compose

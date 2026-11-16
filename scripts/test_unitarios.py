@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     subprocess.run([sys.executable, str(ROOT / "scripts/generar_protos.py"), "--check"], check=True)
-    for carpeta in (ROOT, ROOT / "catalogo_service", ROOT / "prestamos_service"):
+    subprocess.run([sys.executable, str(ROOT / "scripts/generar_openapi.py"), "--check"], check=True)
+    for carpeta in (ROOT, ROOT / "catalogo_service", ROOT / "prestamos_service", ROOT / "sanciones_service", ROOT / "gateway_service"):
         subprocess.run([sys.executable, "-m", "pytest", "tests", "-q"], cwd=carpeta, check=True)
 
 

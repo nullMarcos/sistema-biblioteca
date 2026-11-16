@@ -17,6 +17,7 @@ from src.saga.exceptions import (
     OperacionPendienteError, LeasePerdidoError, respuesta_error,
 )
 from src.saga.storage import escritura_propietaria, soltar, proximo_intento, validar_presupuesto_lease
+from src.presupuestos import limitar_operacion, PresupuestoAgotado
 
 logger = logging.getLogger("prestamos.saga.orchestrator")
 
@@ -52,8 +53,10 @@ class PrestamoSagaOrchestrator:
         except Exception:
             self.db.rollback()
             logger.exception("saga=%s pendiente sin poder guardar nuevo progreso", saga_id)
-        raise OperacionPendienteError(saga_id) from exc
+        agotado = isinstance(exc, (PresupuestoAgotado, default_grpc_client.CatalogoTimeoutError))
+        raise OperacionPendienteError(saga_id, http_status=504 if agotado else 503) from exc
 
+    @limitar_operacion
     def ejecutar(self, payload: schemas.PrestamoInput, actor_id=None):
         registro, nueva = admitir(self.db, payload, actor_id, owner=self.owner)
         context = self.contexto(registro)
@@ -79,7 +82,7 @@ class PrestamoSagaOrchestrator:
             sanciones = self.sanciones_client.verificar_sanciones(rut)
             if sanciones.get("tiene_sancion") is True:
                 raise SocioSancionadoError(payload.socio_id)
-            context.degradado = sanciones.get("degradado") is True
+            context.degradado = not (sanciones.get("tiene_sancion") is False and sanciones.get("degradado") is False)
             context.motivo_degradacion = sanciones.get("motivo_degradacion")
             with self._escritura(identificador) as actual:
                 actual.sanciones_json = json.dumps(sanciones)
@@ -124,7 +127,7 @@ class PrestamoSagaOrchestrator:
                     return resultado_previo(actual), self.contexto(actual)
             except Exception as lectura:
                 self._pendiente(identificador, context.saga_id, lectura)
-            error = exc if isinstance(exc, (SagaError, default_grpc_client.CatalogoError,
+            error = exc if isinstance(exc, (SagaError, PresupuestoAgotado, default_grpc_client.CatalogoError,
                 default_grpc_client.CircuitBreakerOpenError)) else SagaStepError(paso.value,
                     "Fallo de persistencia o ejecución; compensación requerida", codigo="FALLO_PASO_COMPENSADO")
             terminal_sin_efecto = paso == SagaStep.PASO_1_RESERVA_CATALOGO and isinstance(exc, (

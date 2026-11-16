@@ -4,6 +4,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from src.presupuestos import restante
 
 # Obteiene la URL de la base de datos desde las variables de entorno, si no existe entonces por default recurre prestamos.db
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./prestamos.db")
@@ -30,8 +31,10 @@ def escritura(db):
             raise RuntimeError("La sesión contiene cambios fuera de la transacción del caso de uso")
         db.rollback()
     try:
+        restante()
         db.execute(text("BEGIN IMMEDIATE"))
         yield
+        restante()
         db.commit()
     except Exception:
         db.rollback()

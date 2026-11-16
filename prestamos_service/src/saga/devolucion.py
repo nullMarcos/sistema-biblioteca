@@ -11,6 +11,7 @@ from src import grpc_client as default_grpc_client
 from src.database import escritura
 from src.saga.exceptions import ReglaPrestamoError, OperacionPendienteError, LeasePerdidoError, respuesta_error
 from src.saga.storage import LEASE_SECONDS, escritura_propietaria, soltar, proximo_intento, validar_presupuesto_lease
+from src.presupuestos import limitar_operacion, PresupuestoAgotado
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class DevolucionService:
     def _escritura(self, identificador):
         return escritura_propietaria(self.db, models.DevolucionOperacion, identificador, self.owner)
 
+    @limitar_operacion
     def devolver(self, prestamo_id, idempotency_key=None, actor_id=None):
         clave = idempotency_key if idempotency_key is not None else str(uuid.uuid4())
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}", clave):
@@ -65,6 +67,7 @@ class DevolucionService:
             identificador = operacion.id
         return self.ejecutar_pendiente(identificador)
 
+    @limitar_operacion
     def ejecutar_pendiente(self, identificador):
         operacion_id = str(identificador)
         try:
@@ -113,5 +116,5 @@ class DevolucionService:
                 self.db.rollback()
                 logger.exception("devolucion=%s no se pudo guardar nuevo progreso", operacion_id)
             http = respuesta_error(exc)["http"] if isinstance(exc, (default_grpc_client.CatalogoError,
-                default_grpc_client.CircuitBreakerOpenError)) else 503
+                default_grpc_client.CircuitBreakerOpenError, PresupuestoAgotado)) else 503
             raise OperacionPendienteError(operacion_id, "Devolución pendiente de recuperación", http_status=http) from exc

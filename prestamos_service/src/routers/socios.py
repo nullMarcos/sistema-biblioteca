@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from typing import List, Optional
+from typing import List, Optional, Annotated
 
 from src.database import get_db
 from src.schemas import SocioInput, SocioOut, ErrorResponse
@@ -15,8 +15,11 @@ router = APIRouter(
     dependencies=[Depends(verificar_api_key)],
     responses={
         400: {"model": ErrorResponse, "description": "Error en la solicitud"},
+        401: {"model": ErrorResponse, "description": "API Key ausente o inválida"},
         404: {"model": ErrorResponse, "description": "Socio no encontrado"},
         409: {"model": ErrorResponse, "description": "RUT o correo duplicado"},
+        500: {"model": ErrorResponse, "description": "Error de persistencia local"},
+        503: {"model": ErrorResponse, "description": "Base de datos temporalmente ocupada"},
     }
 )
 
@@ -63,7 +66,7 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db)):
     return nuevo_socio
 
 @router.get("/{socio_id}", response_model=SocioOut)
-def consultar_socio(socio_id: int, db: Session = Depends(get_db)):
+def consultar_socio(socio_id: Annotated[int, Path(gt=0)], db: Session = Depends(get_db)):
     socio = db.get(models.Socio, socio_id)
     if socio is None:
         raise HTTPException(

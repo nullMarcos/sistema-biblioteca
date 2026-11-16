@@ -187,6 +187,9 @@ def test_contrato_de_devolucion_coincide_con_rutas_y_cabecera(client):
     assert contrato["paths"][alias]["delete"]["deprecated"] is runtime["paths"][alias]["delete"]["deprecated"] is True
     assert "post" in contrato["paths"][post] and "post" in runtime["paths"][post]
     parametro = next(p for p in runtime["paths"][post]["post"]["parameters"] if p["name"] == "Idempotency-Key")
+    estatico = next(p for p in contrato["paths"][post]["post"]["parameters"] if p["name"] == "Idempotency-Key")
+    assert parametro == estatico
     esquema = next(s for s in parametro["schema"]["anyOf"] if s["type"] == "string")
-    assert esquema["maxLength"] == contrato["components"]["schemas"]["Clave_Idempotencia"]["maxLength"] == 64
-    assert esquema["pattern"] == contrato["components"]["schemas"]["Clave_Idempotencia"]["pattern"]
+    assert esquema["maxLength"] == 64
+    assert esquema["minLength"] == 1
+    assert esquema["pattern"] == r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"

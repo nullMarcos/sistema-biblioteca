@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Header, Path
 from sqlalchemy.orm import Session
 
-from typing import List, Optional
+from typing import List, Optional, Annotated
 
 from src.database import get_db
 from src.schemas import PrestamoInput, PrestamoOut, SagaStatusOut, DevolucionStatusOut, ClaveIdempotencia, ErrorResponse
@@ -32,9 +34,13 @@ router = APIRouter(
     dependencies=[Depends(verificar_api_key)],
     responses={
         400: {"model": ErrorResponse, "description": "Error en los parámetros de la solicitud"},
+        401: {"model": ErrorResponse, "description": "API Key ausente o inválida"},
         404: {"model": ErrorResponse, "description": "Recurso no encontrado"},
         409: {"model": ErrorResponse, "description": "Conflicto en la operación"},
-        503: {"model": ErrorResponse, "description": "Servicio de Catálogo no disponible"},
+        500: {"model": ErrorResponse, "description": "Error real de persistencia o ejecución"},
+        502: {"model": ErrorResponse, "description": "Respuesta remota inválida o error de protocolo"},
+        503: {"model": ErrorResponse, "description": "Indisponibilidad, circuito abierto o recuperación pendiente"},
+        504: {"model": ErrorResponse, "description": "Tiempo de espera remoto agotado"},
     }
 )
 
@@ -60,12 +66,18 @@ def listar_prestamos(estado: Optional[str] = None, db: Session = Depends(get_db)
 
     return [_inyectar_hateoas(p) for p in query.all()]
 
-@router.post("", response_model=PrestamoOut, status_code=201)
+@router.post("", response_model=PrestamoOut, status_code=201,
+    responses={403: {"model": ErrorResponse, "description": "Inyección de fallo no habilitada o actor no autorizado"}})
 def crear_prestamo(prestamo: PrestamoInput, request: Request, db: Session = Depends(get_db)):
     """
     Registra el préstamo de un libro ejecutando la transacción distribuida con el patrón Saga.
     Coordina Reserva en Catálogo, Verificación en Sanciones y Persistencia en Préstamos.
     """
+    if prestamo.simular_fallo_paso3:
+        if os.getenv("HABILITAR_FALLOS_DEMO", "false").lower() != "true":
+            raise HTTPException(status_code=403, detail={"codigo": "DEMO_DESHABILITADA", "mensaje": "La inyección de fallos no está habilitada"})
+        if request.headers.get("X-User-Role") != "admin" or not request.headers.get("X-User-ID"):
+            raise HTTPException(status_code=403, detail={"codigo": "DEMO_NO_AUTORIZADA", "mensaje": "Se requiere un actor administrador autenticado"})
     orquestador = PrestamoSagaOrchestrator(db=db)
     try:
         nuevo_prestamo, ctx = orquestador.ejecutar(prestamo, actor_id=request.headers.get("X-User-ID"))
@@ -110,7 +122,7 @@ def consultar_estado_saga(saga_id: str, db: Session = Depends(get_db)):
     return registro
 
 @router.get("/saga/idempotency/{idempotency_key}", response_model=SagaStatusOut)
-def consultar_saga_por_idempotencia(idempotency_key: str, db: Session = Depends(get_db)):
+def consultar_saga_por_idempotencia(idempotency_key: ClaveIdempotencia, db: Session = Depends(get_db)):
     """Consulta el estado de una transacción Saga por su clave de idempotencia."""
     registro = db.query(models.SagaTransaccion).filter(models.SagaTransaccion.idempotency_key == idempotency_key).first()
     if not registro:
@@ -121,7 +133,7 @@ def consultar_saga_por_idempotencia(idempotency_key: str, db: Session = Depends(
     return registro
 
 @router.get("/{prestamo_id}", response_model=PrestamoOut)
-def consultar_prestamo(prestamo_id: int, db: Session = Depends(get_db)):
+def consultar_prestamo(prestamo_id: Annotated[int, Path(gt=0)], db: Session = Depends(get_db)):
     prestamo = db.get(models.Prestamo, prestamo_id)
     if prestamo is None:
         raise HTTPException(
@@ -141,7 +153,7 @@ def consultar_devolucion(idempotency_key: ClaveIdempotencia, db: Session = Depen
 
 @router.post("/{prestamo_id}/devolucion", response_model=PrestamoOut)
 @router.delete("/{prestamo_id}", response_model=PrestamoOut, deprecated=True)
-def eliminar_prestamo(prestamo_id: int, request: Request,
+def eliminar_prestamo(prestamo_id: Annotated[int, Path(gt=0)], request: Request,
         idempotency_key: Optional[ClaveIdempotencia] = Header(None, alias="Idempotency-Key"),
         db: Session = Depends(get_db)):
     """Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar."""

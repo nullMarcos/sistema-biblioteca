@@ -1,370 +1,409 @@
 #!/usr/bin/env python3
-"""
-Demostración automatizada de Escenarios Obligatorios de la Saga (ABET 1 y ABET 6).
+"""C13: escenarios y regresiones reales por Gateway en un Compose desechable.
 
-Escenarios evaluados:
-  1. Escenario 1 (Camino Feliz): Ejecución completa de la Saga sin fallas (Catálogo gRPC + Sanciones HTTP + Préstamos DB).
-  2. Idempotencia: Deduplicación estricta ante reintentos con la misma clave.
-  3. Escenario 2 (Fallo con Compensación Inversa): Falla forzada en Paso 3 y reversión en orden inverso.
-  4. Rechazo por Socio Sancionado: Violación de regla de negocio en Paso 2 y compensación semántica de Paso 1.
-  5. Degradación Elegante: Falla de servicio de Sanciones y registro de préstamo en EN_REVISION.
-
-Genera reporte cuantitativo reproducible en 'scripts/resultados_saga_abet6.txt'.
+No usa bases locales, puertos fijos ni datos de otro proyecto. Un fallo produce
+salida no cero y conserva diagnóstico/logs; los recursos propios siempre se limpian.
 """
 
-import os
-import sys
-import time
-import json
-import uuid
-import subprocess
-import urllib.request
-import urllib.error
-from pathlib import Path
+import argparse
+import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import platform
+import sqlite3
+import subprocess
+import tempfile
+from threading import Barrier
+import time
+import uuid
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-CATALOGO_DIR = ROOT_DIR / "catalogo_service"
-SANCIONES_DIR = ROOT_DIR / "sanciones_service"
-PRESTAMOS_DIR = ROOT_DIR / "prestamos_service"
-
-# Configurar puertos aislados de prueba
-GRPC_TEST_PORT = 50055
-SANCIONES_TEST_PORT = 8096
-
-os.environ["API_KEY"] = "biblioteca_dev_key_2026"
-os.environ["CATALOGO_GRPC_HOST"] = "127.0.0.1"
-os.environ["CATALOGO_GRPC_PORT"] = str(GRPC_TEST_PORT)
-os.environ["SANCIONES_URL"] = f"http://127.0.0.1:{SANCIONES_TEST_PORT}"
-
-# Configurar PYTHONPATH únicamente para prestamos_service y sus protos
-sys.path.insert(0, str(PRESTAMOS_DIR))
-sys.path.insert(0, str(PRESTAMOS_DIR / "protos"))
-
-import grpc
-import catalogo_pb2
-import catalogo_pb2_grpc
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from src.database import Base as PrestamosBase
-from src import models as prestamos_models
-from src import schemas as prestamos_schemas
-from src import grpc_client
-from src.sanciones_client import get_sanciones_client
-from src.saga import (
-    PrestamoSagaOrchestrator,
-    SagaState,
-    SagaStepError,
-    SocioSancionadoError,
-)
-
-DIR_REPORTE = ROOT_DIR / "scripts"
-ARCHIVO_REPORTE = DIR_REPORTE / "resultados_saga_abet6.txt"
+from diagnosticar_consistencia import diagnosticar
+from verificar_compose import compose, inspeccionar, puerto_libre
+from verificar_gateway import verificar as verificar_gateway
+from verificar_operaciones import api
 
 
-def iniciar_proceso_catalogo():
-    """Inicia el microservicio gRPC de Catálogo en un proceso aislado."""
-    db_file = Path("/tmp/catalogo_test.db")
-    if db_file.exists():
-        db_file.unlink()
+class Escenarios:
+    def __init__(self, salida, grupo):
+        self.salida, self.grupo = salida, grupo
+        self.proyecto = "bibg03" + uuid.uuid4().hex[:10]
+        self.puerto = puerto_libre()
+        self.env = {**os.environ, "GATEWAY_PORT": str(self.puerto), "API_KEY": "clave-g03-desechable",
+            "JWT_SECRET": "secreto-g03-desechable-con-longitud-suficiente", "SANCIONES_URL": "http://sanciones:8000",
+            "MAX_PRESTAMOS_POR_SOCIO": "2", "SQLITE_BUSY_TIMEOUT": "0.5", "SAGA_LEASE_SECONDS": "30",
+            "SAGA_RECUPERACION_MAX_INTENTOS": "5", "SAGA_RECUPERACION_BACKOFF": "1", "SAGA_RECUPERACION_BACKOFF_MAX": "60",
+            "CATALOGO_TIMEOUT_SEGS": "0.6", "CATALOGO_MAX_RETRIES": "1", "CATALOGO_INITIAL_BACKOFF_SEGS": "0.1",
+            "SANCIONES_TIMEOUT_SEGS": "1.5", "SANCIONES_CB_THRESHOLD": "3", "SANCIONES_CB_RECOVERY_SEGS": "3",
+            "SANCIONES_MAX_CONCURRENT": "2", "SAGA_TIMEOUT_SEGS": "8", "GATEWAY_TIMEOUT_SEGS": "10",
+            "HABILITAR_FALLOS_DEMO": "false", "RATE_LIMIT": "20" if grupo == "todos" else "1000", "RATE_WINDOW": "3"}
+        self.resultado = {"estado": "EN_CURSO", "fecha_utc": datetime.now(timezone.utc).isoformat(), "proyecto": self.proyecto,
+            "grupo": grupo, "entorno": {"host": platform.platform(), "python": platform.python_version()},
+            "configuracion": {k: v for k, v in self.env.items() if k in {
+                "MAX_PRESTAMOS_POR_SOCIO", "SQLITE_BUSY_TIMEOUT", "CATALOGO_TIMEOUT_SEGS", "CATALOGO_MAX_RETRIES",
+                "CATALOGO_INITIAL_BACKOFF_SEGS", "SANCIONES_TIMEOUT_SEGS", "SANCIONES_CB_THRESHOLD",
+                "SANCIONES_CB_RECOVERY_SEGS", "SANCIONES_MAX_CONCURRENT", "SAGA_TIMEOUT_SEGS", "GATEWAY_TIMEOUT_SEGS"}},
+            "peticiones": [], "comprobaciones": []}
+        self.token = self.token_socio = None
 
-    env = os.environ.copy()
-    env["GRPC_PORT"] = str(GRPC_TEST_PORT)
-    env["DATABASE_URL"] = f"sqlite:///{db_file}"
+    def dc(self, *args, captura=False):
+        if "--force-recreate" in args:
+            self.guardar_logs()
+        return compose(self.proyecto, self.env, *args, captura=captura)
 
-    proc = subprocess.Popen(
-        [sys.executable, "main.py"],
-        cwd=str(CATALOGO_DIR),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    def guardar_logs(self):
+        logs = self.dc("logs", "--no-color", captura=True)
+        with (self.salida / "servicios.log").open("a") as archivo:
+            archivo.write(f"\nCaptura UTC {datetime.now(timezone.utc).isoformat()}\n{logs}")
 
-    import socket
+    def ejecutar(self, servicio, codigo):
+        return self.dc("exec", "-T", servicio, "python", "-c", codigo, captura=True)
 
-    # Esperar que el puerto gRPC esté respondiendo
-    conectado = False
-    for _ in range(60):
+    def interno(self, servicio, ruta, metodo="GET"):
+        codigo = """
+import json, os, urllib.request, urllib.error
+req = urllib.request.Request('http://SERVICIO:8000' + RUTA, method=METODO,
+    headers={'X-API-Key': os.environ.get('API_KEY', '')})
+try:
+    resp = urllib.request.urlopen(req, timeout=4)
+except urllib.error.HTTPError as exc:
+    resp = exc
+with resp:
+    print(json.dumps([resp.code, json.load(resp)]))
+""".replace("SERVICIO", servicio).replace("RUTA", repr(ruta)).replace("METODO", repr(metodo))
+        return json.loads(self.ejecutar("prestamos", codigo))
+
+    def rpc(self, expresion):
+        codigo = """
+import json, sys
+sys.path.insert(0, '/app/protos')
+import grpc, catalogo_pb2 as pb, catalogo_pb2_grpc as rpc
+with grpc.insecure_channel('catalogo:50051') as canal:
+    stub = rpc.CatalogoStub(canal)
+    RESULTADO
+""".replace("RESULTADO", expresion)
+        return json.loads(self.ejecutar("prestamos", codigo))
+
+    def stock(self, libro):
+        return self.rpc(f"r = stub.ConsultarDisponibilidad(pb.ConsultaRequest(libro_id={libro}), timeout=3); "
+            "print(json.dumps({'disponibles': r.ejemplares_disponibles, 'total': r.total_ejemplares}))")
+
+    def ok(self, nombre, **evidencia):
+        self.resultado["comprobaciones"].append({"nombre": nombre, **evidencia})
+        print(f"PASS: {nombre}", flush=True)
+
+    def pedir(self, escenario, ruta, cuerpo=None, clave=None, metodo=None, esperado=200, token=None, headers_extra=None):
+        inicio = time.monotonic()
+        estado, datos = api(self.puerto, ruta, token or self.token, cuerpo, clave, metodo, headers_extra)
+        self.resultado["peticiones"].append({"escenario": escenario, "ruta": ruta, "metodo": metodo or ("POST" if cuerpo is not None else "GET"),
+            "http": estado, "duracion_ms": round((time.monotonic() - inicio) * 1000, 3),
+            "estado": datos.get("estado") if isinstance(datos, dict) else None,
+            "codigo": datos.get("codigo") if isinstance(datos, dict) else None,
+            "idempotency_key": clave or (cuerpo or {}).get("idempotency_key")})
+        assert estado in ((esperado,) if isinstance(esperado, int) else esperado), (escenario, estado, datos)
+        return datos
+
+    def prestar(self, escenario, libro, clave=None, socio=None, esperado=201, **opciones):
+        return self.pedir(escenario, "/api/v1/prestamos", cuerpo={"socio_id": socio or self.ana, "libro_id": libro,
+            "idempotency_key": clave or escenario, **opciones}, esperado=esperado)
+
+    def devolver(self, prestamo, escenario="devolucion"):
+        return self.pedir(escenario, f"/api/v1/prestamos/{prestamo['id']}/devolucion", cuerpo={}, clave=f"devolver-{prestamo['id']}")
+
+    def saga(self, clave):
+        return self.pedir("consulta-saga", f"/api/v1/prestamos/saga/idempotency/{clave}")
+
+    def metricas(self):
+        estado, datos = self.interno("prestamos", "/internal/resiliencia")
+        assert estado == 200
+        return datos
+
+    def consistencia(self, etapa):
+        rutas = []
+        filas = {}
+        for servicio in ("catalogo", "prestamos", "sanciones"):
+            codigo = f"""
+import base64, sqlite3
+from contextlib import closing
+with closing(sqlite3.connect('file:/app/data/{servicio}.db?mode=ro', uri=True)) as origen:
+    with closing(sqlite3.connect(':memory:')) as copia:
+        origen.backup(copia)
+        print(base64.b64encode(copia.serialize()).decode())
+"""
+            ruta = self.salida / f"{etapa}-{servicio}.db"
+            ruta.write_bytes(base64.b64decode(self.ejecutar(servicio, codigo)))
+            rutas.append(ruta)
+            with sqlite3.connect(ruta) as db:
+                tablas = [t[0] for t in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+                filas[servicio] = {tabla: db.execute(f'SELECT * FROM "{tabla}" ORDER BY rowid').fetchall() for tabla in tablas}
+        resultado = diagnosticar(*rutas)
+        assert resultado["coherente"], resultado
+        self.ok(f"consistencia {etapa}", diagnostico=resultado)
+        return filas
+
+    def preparar(self):
+        self.token = api(self.puerto, "/auth/login", cuerpo={"username": "admin", "password": "admin123"})[1]["access_token"]
+        self.token_socio = api(self.puerto, "/auth/login", cuerpo={"username": "socio1", "password": "socio123"})[1]["access_token"]
+        socios = self.pedir("socios-semilla", "/api/v1/socios")
+        por_rut = {s["rut"]: s["id"] for s in socios}
+        self.ana, self.carlos, self.lucia = (por_rut[rut] for rut in ("11.111.111-1", "22.222.222-2", "33.333.333-3"))
+        self.libros = self.rpc("print(json.dumps([{'id': l.id, 'total': l.total_ejemplares} "
+            "for l in stub.ListarCatalogo(pb.CatalogoRequest(), timeout=3).libros]))")
+        # Desalinear deliberadamente IDs locales en la instalación desechable.
+        self.ejecutar("sanciones", "from src.database import engine\nwith engine.begin() as db:\n"
+            "    db.exec_driver_sql('PRAGMA defer_foreign_keys=ON')\n"
+            "    db.exec_driver_sql('UPDATE socios SET id=id+100')\n"
+            "    db.exec_driver_sql('UPDATE bloqueos SET socio_id=socio_id+100')\n"
+            "    db.exec_driver_sql('UPDATE multas SET socio_id=socio_id+100')")
+        estado, sancion = self.interno("sanciones", "/v1/sanciones/socios/11.111.111-1")
+        assert estado == 200 and sancion["socio_id"] != self.ana and not sancion["tiene_sancion"]
+        self.consistencia("semillas")
+
+    def operaciones(self):
+        libro = self.libros[0]["id"]
+        stock = self.stock(libro)
+        # Demostración deshabilitada incluso para admin, antes de crear una Saga.
+        rechazo = self.prestar("demo-deshabilitada", libro, esperado=403, simular_fallo_paso3=True)
+        assert rechazo["codigo"] == "DEMO_DESHABILITADA"
+        self.env["HABILITAR_FALLOS_DEMO"] = "true"
+        self.dc("up", "-d", "--no-deps", "--force-recreate", "--wait", "prestamos")
+        self.pedir("demo-rol-no-autorizado", "/api/v1/prestamos", cuerpo={"socio_id": self.ana, "libro_id": libro,
+            "simular_fallo_paso3": True}, esperado=403, token=self.token_socio,
+            headers_extra={"X-User-Role": "admin", "X-User-ID": "1"})
+        self.ok("inyección requiere habilitación y administrador; Gateway elimina identidad falsificada")
+
+        prestamo = self.prestar("feliz", libro)
+        assert prestamo["estado"] == "ACTIVO"
+        assert self.stock(libro)["disponibles"] == stock["disponibles"] - 1
+        assert self.prestar("replay", libro, clave="feliz") == prestamo
+        conflicto = self.prestar("colision", self.libros[1]["id"], clave="feliz", esperado=409)
+        assert conflicto["codigo"] == "IDEMPOTENCIA_PAYLOAD_DISTINTO"
+        self.ok("Saga real feliz correlaciona por RUT con IDs diferentes; replay y colisión", prestamo_id=prestamo["id"])
+        devuelto = self.devolver(prestamo)
+        assert devuelto["estado"] == "DEVUELTO"
+        assert self.devolver(prestamo) == devuelto
+        assert self.pedir("alias-delete", f"/api/v1/prestamos/{prestamo['id']}", clave=f"devolver-{prestamo['id']}", metodo="DELETE") == devuelto
+        self.pedir("devuelto-sin-clave", f"/api/v1/prestamos/{prestamo['id']}/devolucion", cuerpo={}, esperado=409)
+        assert self.stock(libro) == stock
+
+        for escenario, opciones, codigo in (("fallo-demo", {"simular_fallo_paso3": True}, 500),
+                ("sancionado", {"socio": self.carlos}, 409)):
+            self.prestar(escenario, libro, esperado=codigo, **opciones)
+            saga = self.saga(escenario)
+            assert saga["estado"] == "COMPENSADA" and saga["accion_pendiente"] is None
+            remota = self.rpc(f"r=stub.ConsultarOperacion(pb.OperacionRequest(operacion_id={saga['reserva_id']!r}), timeout=3); print(json.dumps(r.estado))")
+            assert remota == "CANCELADA" and self.stock(libro) == stock
+        self.ok("fallo último paso y socio sancionado compensan la reserva; sin anulación local ficticia")
+
+        self.ejecutar("prestamos", "from src.database import engine\nwith engine.begin() as db:\n"
+            "    db.exec_driver_sql(\"CREATE TRIGGER fallo_c13 BEFORE INSERT ON prestamos BEGIN SELECT RAISE(ABORT, 'fallo real C13'); END\")")
         try:
-            with socket.create_connection(("127.0.0.1", GRPC_TEST_PORT), timeout=0.2):
-                conectado = True
-                break
-        except Exception:
-            time.sleep(0.1)
+            self.prestar("fallo-bd-real", libro, esperado=500)
+            assert self.saga("fallo-bd-real")["estado"] == "COMPENSADA"
+            assert self.stock(libro) == stock
+        finally:
+            self.ejecutar("prestamos", "from src.database import engine\nwith engine.begin() as db:\n    db.exec_driver_sql('DROP TRIGGER fallo_c13')")
+        self.ok("fallo real SQLite del paso 3 conserva error 500 y compensa")
 
-    if not conectado:
-        proc.terminate()
-        raise RuntimeError("No se pudo iniciar el servicio gRPC de Catálogo")
-    return proc
+        unico = next(l["id"] for l in self.libros if l["total"] == 1)
+        prestado = self.prestar("stock-ultimo", unico)
+        assert self.stock(unico)["disponibles"] == 0
+        assert self.prestar("stock-agotado", unico, socio=self.lucia, esperado=409)["codigo"] == "SIN_STOCK"
+        assert self.prestar("libro-inexistente", 2147483647, esperado=404)["codigo"] == "CATALOGO_NO_ENCONTRADO"
+        self.devolver(prestado)
+        self.pedir("id-no-positivo", "/api/v1/prestamos", cuerpo={"socio_id": 0, "libro_id": libro}, esperado=400)
+        self.pedir("correo-duplicado", "/api/v1/socios", cuerpo={"rut": "99.999.999-9", "nombre": "Prueba", "correo": "ana.garcia@example.com"}, esperado=409)
+        self.pedir("rut-duplicado", "/api/v1/socios", cuerpo={"rut": "11.111.111-1", "nombre": "Prueba", "correo": "otro@example.com"}, esperado=409)
+        cupos = [self.prestar(f"cupo-{i}", self.libros[i]["id"]) for i in range(2)]
+        assert self.prestar("cupo-agotado", self.libros[2]["id"], esperado=409)["codigo"] == "CUPO_PRESTAMOS_AGOTADO"
+        for p in cupos:
+            self.devolver(p)
+        self.ok("stock válido, inexistente distinto, IDs positivos, conflictos 409 y máximo configurable=2")
 
+        inicio = Barrier(8)
 
-def iniciar_proceso_sanciones():
-    """Inicia el microservicio REST de Sanciones en un proceso aislado."""
-    db_file = Path("/tmp/sanciones_test.db")
-    if db_file.exists():
-        db_file.unlink()
+        def simultanea(i):
+            inicio.wait(timeout=5)
+            return self.prestar("concurrente", libro, clave="concurrente", esperado=(201, 409))
 
-    env = os.environ.copy()
-    env["DATABASE_URL"] = f"sqlite:///{db_file}"
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            respuestas = list(pool.map(simultanea, range(8)))
+        exitosas = [r for r in respuestas if r.get("id")]
+        assert exitosas and len({r["id"] for r in exitosas}) == 1
+        assert self.stock(libro)["disponibles"] == stock["disponibles"] - 1
+        self.devolver(exitosas[0])
+        self.ok("misma clave concurrente produce un préstamo y una reserva", solicitudes=8, prestamo_id=exitosas[0]["id"])
+        self.consistencia("operaciones")
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(SANCIONES_TEST_PORT), "--log-level", "error"],
-        cwd=str(SANCIONES_DIR),
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    def catalogo_fallando(self):
+        libro = self.libros[0]["id"]
+        stock = self.stock(libro)
+        for modo in ("pause", "stop"):
+            clave = f"catalogo-{modo}"
+            self.dc(modo, "catalogo")
+            try:
+                self.prestar(clave, libro, esperado=(503, 504))
+                assert self.pedir("lectura-catalogo-caido", "/api/v1/socios")
+                saga = self.saga(clave)
+                assert saga["estado"] == "COMPENSACION_PENDIENTE" and saga["reserva_id"]
+            finally:
+                if modo == "pause":
+                    self.dc("unpause", "catalogo")
+                else:
+                    self.dc("up", "-d", "--no-deps", "catalogo")
+                # Después de una pausa, Docker puede conservar unhealthy hasta el
+                # próximo healthcheck. Esperar al RPC real sin ignorar sus errores.
+                limite = time.monotonic() + 15
+                while True:
+                    try:
+                        self.stock(libro)
+                        break
+                    except subprocess.CalledProcessError:
+                        if time.monotonic() >= limite:
+                            raise
+                        time.sleep(0.2)
+            recuperacion = json.loads(self.dc("exec", "-T", "prestamos", "python", "-m", "src.saga.recuperacion",
+                "--reanudar", "--saga-id", saga["saga_id"], captura=True))
+            assert recuperacion["resueltas"] == 1 and recuperacion["pendientes"] == 0, recuperacion
+            assert self.saga(clave)["estado"] == "COMPENSADA" and self.stock(libro) == stock
+            self.ok(f"Catálogo {modo}: duración acotada, lectura útil y recuperación por identidad", recuperacion=recuperacion)
+        circuito = self.metricas()["catalogo"]["circuit_breaker"]
+        if circuito["state"] == "open":
+            time.sleep(max(0, circuito["recovery_timeout"] - circuito["seconds_since_state_change"]) + 0.1)
+        prestamo = self.prestar("catalogo-sonda-recuperada", libro)
+        assert prestamo["estado"] == "ACTIVO"
+        assert self.metricas()["catalogo"]["circuit_breaker"]["state"] == "closed"
+        self.devolver(prestamo)
+        self.ok("el circuito de Catálogo en el proceso servidor también recupera por una llamada real", circuito_previo=circuito)
+        self.consistencia("catalogo-recuperado")
 
-    conectado = False
-    for _ in range(60):
-        try:
-            req = urllib.request.Request(f"http://127.0.0.1:{SANCIONES_TEST_PORT}/health")
-            with urllib.request.urlopen(req, timeout=0.5) as r:
-                if r.status == 200:
-                    conectado = True
+    def resiliencia(self):
+        libro = self.libros[0]["id"]
+        stock = self.stock(libro)
+        self.interno("sanciones", "/chaos/delay?seconds=4", "POST")
+        for i in range(3):
+            p = self.prestar(f"timeout-sanciones-{i}", libro)
+            assert p["estado"] == "EN_REVISION"
+            assert self.devolver(p)["estado"] == "ANULADO"
+        metricas = self.metricas()
+        assert metricas["sanciones"]["circuit_breaker"]["state"] == "open", metricas
+        llamadas = metricas["sanciones"]["network_calls"]
+        p = self.prestar("sanciones-circuito-abierto", libro)
+        assert p["estado"] == "EN_REVISION"
+        assert self.metricas()["sanciones"]["network_calls"] == llamadas
+        self.devolver(p)
+        assert self.interno("prestamos", "/health")[0] == 503
+        assert self.pedir("lectura-con-circuito-abierto", "/api/v1/socios")
+        self.interno("sanciones", "/chaos/reset", "POST")
+        time.sleep(float(self.env["SANCIONES_CB_RECOVERY_SEGS"]) + 0.1)
+        p = self.prestar("sonda-recuperada", libro)
+        assert p["estado"] == "ACTIVO"
+        assert self.metricas()["sanciones"]["circuit_breaker"]["state"] == "closed"
+        self.devolver(p)
+        self.ok("Sanciones lenta: timeout real, revisión, circuito abierto sin red y recuperación", metricas_abierto=metricas)
+
+        self.env["MAX_PRESTAMOS_POR_SOCIO"] = "20"
+        self.dc("up", "-d", "--no-deps", "--force-recreate", "--wait", "prestamos")
+        self.interno("sanciones", "/chaos/delay?seconds=4", "POST")
+        inicio = Barrier(9)
+
+        def simultanea(i):
+            inicio.wait(timeout=5)
+            return self.prestar(f"bulkhead-{i}", self.libros[i]["id"])
+
+        with ThreadPoolExecutor(max_workers=9) as pool:
+            pendientes = [pool.submit(simultanea, i) for i in range(9)]
+            limite = time.monotonic() + 1.2
+            while True:
+                activas = self.metricas()["sanciones"]["bulkhead"]["active_calls"]
+                if activas == 2 or time.monotonic() >= limite:
                     break
-        except Exception:
-            time.sleep(0.1)
+            assert activas == 2, activas
+            antes = time.monotonic()
+            assert self.pedir("lectura-durante-lentitud", "/api/v1/socios")
+            lectura_ms = round((time.monotonic() - antes) * 1000, 3)
+            assert not all(f.done() for f in pendientes)
+            prestamos = [f.result(timeout=8) for f in pendientes]
+        metricas = self.metricas()
+        assert all(p["estado"] == "EN_REVISION" for p in prestamos)
+        assert metricas["sanciones"]["bulkhead"]["peak_calls"] == 2
+        assert metricas["sanciones"]["bulkhead"]["rejected_calls"] >= 1
+        assert metricas["sanciones"]["network_calls"] == 2
+        assert metricas["sanciones"]["bulkhead"]["active_calls"] == 0
+        for p in prestamos:
+            assert self.devolver(p)["estado"] == "ANULADO"
+        self.interno("sanciones", "/chaos/reset", "POST")
+        self.ok("Bulkhead efectivo limita a dos llamadas y mantiene lecturas útiles", metricas=metricas, lectura_durante_lentitud_ms=lectura_ms)
 
-    if not conectado:
-        proc.terminate()
-        raise RuntimeError("No se pudo iniciar el servicio de Sanciones")
-    return proc
-
-
-def set_chaos(endpoint: str, params: str = ""):
-    url = f"http://127.0.0.1:{SANCIONES_TEST_PORT}/chaos/{endpoint}"
-    if params:
-        url += f"?{params}"
-    req = urllib.request.Request(url, method="POST")
-    with urllib.request.urlopen(req, timeout=2.0) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-
-def consultar_disponibilidad_catalogo(libro_id: int) -> dict:
-    canal = grpc.insecure_channel(f"127.0.0.1:{GRPC_TEST_PORT}")
-    stub = catalogo_pb2_grpc.CatalogoStub(canal)
-    req = catalogo_pb2.ConsultaRequest(libro_id=libro_id)
-    resp = stub.ConsultarDisponibilidad(req, timeout=2.0)
-    canal.close()
-    return {
-        "libro_id": resp.libro_id,
-        "disponibles": resp.ejemplares_disponibles,
-        "total": resp.total_ejemplares,
-        "titulo": resp.titulo,
-    }
-
-
-def inicializar_bd_prestamos():
-    engine = create_engine("sqlite:///:memory:")
-    PrestamosBase.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    socio1 = prestamos_models.Socio(id=1, rut="11.111.111-1", nombre="Ana Garcia Morales", correo="ana.garcia@example.com")
-    socio2 = prestamos_models.Socio(id=2, rut="22.222.222-2", nombre="Carlos Mendoza Silva", correo="carlos.mendoza@example.com")
-    socio3 = prestamos_models.Socio(id=3, rut="33.333.333-3", nombre="Lucia Valenzuela Pinto", correo="lucia.valenzuela@example.com")
-    session.add_all([socio1, socio2, socio3])
-    session.commit()
-    return session, engine
-
-
-def registrar_linea_reporte(f, texto: str):
-    print(texto)
-    f.write(texto + "\n")
-
-
-def ejecutar_demostracion():
-    DIR_REPORTE.mkdir(parents=True, exist_ok=True)
-    reporte_f = open(ARCHIVO_REPORTE, "w", encoding="utf-8")
-
-    registrar_linea_reporte(reporte_f, "=" * 80)
-    registrar_linea_reporte(reporte_f, "REPORTE DE EXPERIMENTACION ABET 6 - TRANSACCION DISTRIBUIDA (SAGA)")
-    registrar_linea_reporte(reporte_f, f"Fecha: {datetime.now(timezone.utc).isoformat()}")
-    registrar_linea_reporte(reporte_f, "=" * 80)
-    registrar_linea_reporte(reporte_f, "")
-
-    proc_catalogo = None
-    proc_sanciones = None
-
-    try:
-        # Iniciar dependencias reales
-        print("[SETUP] Iniciando microservicios de Catálogo y Sanciones...")
-        proc_catalogo = iniciar_proceso_catalogo()
-        proc_sanciones = iniciar_proceso_sanciones()
-        print(f"  [OK] Catálogo gRPC activo en 127.0.0.1:{GRPC_TEST_PORT}")
-        print(f"  [OK] Sanciones HTTP activo en 127.0.0.1:{SANCIONES_TEST_PORT}")
-
-        db_prestamos, _ = inicializar_bd_prestamos()
-        sanciones_client = get_sanciones_client()
-        sanciones_client.base_url = f"http://127.0.0.1:{SANCIONES_TEST_PORT}"
-
-        orchestrator = PrestamoSagaOrchestrator(
-            db=db_prestamos,
-            grpc_client=grpc_client,
-            sanciones_client=sanciones_client,
-        )
-
-        set_chaos("reset")
-
-        # -------------------------------------------------------------
-        # FASE 1: Verificación de Inventario Inicial en Catálogo
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "[FASE 1] Verificacion de Estado Inicial de Inventario")
-        disp_l1_antes = consultar_disponibilidad_catalogo(1)  # Dune
-        disp_l2_antes = consultar_disponibilidad_catalogo(2)  # Fundación
-        registrar_linea_reporte(reporte_f, f"  Libro 1 ({disp_l1_antes['titulo']}): {disp_l1_antes['disponibles']}/{disp_l1_antes['total']} disponibles")
-        registrar_linea_reporte(reporte_f, f"  Libro 2 ({disp_l2_antes['titulo']}): {disp_l2_antes['disponibles']}/{disp_l2_antes['total']} disponibles")
-        registrar_linea_reporte(reporte_f, "")
-
-        # -------------------------------------------------------------
-        # FASE 2: Escenario 1 (Camino Feliz)
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "[FASE 2] ESCENARIO 1: Camino Feliz de la Saga")
-        registrar_linea_reporte(reporte_f, "  Entrada: Solicitud de prestamo para Libro 1 (Dune) y Socio 1 (Ana Garcia, sin sanciones).")
-
-        key_feliz = f"idemp-feliz-{uuid.uuid4().hex[:8]}"
-        req_feliz = prestamos_schemas.PrestamoInput(
-            socio_id=1,
-            libro_id=1,
-            idempotency_key=key_feliz,
-        )
-
-        t0 = time.monotonic()
-        prestamo_f, ctx_f = orchestrator.ejecutar(req_feliz)
-        dur_f = round((time.monotonic() - t0) * 1000, 2)
-
-        disp_l1_despues = consultar_disponibilidad_catalogo(1)
-
-        assert prestamo_f.estado == "ACTIVO"
-        assert ctx_f.estado == SagaState.COMPLETADA
-        assert disp_l1_despues["disponibles"] == disp_l1_antes["disponibles"] - 1
-
-        registrar_linea_reporte(reporte_f, f"  Paso 1 (Catalogo gRPC): Reservado ejemplar {prestamo_f.ejemplar_id} (OK)")
-        registrar_linea_reporte(reporte_f, "  Paso 2 (Sanciones HTTP): Verificacion aprobada sin multas ni bloqueos (OK)")
-        registrar_linea_reporte(reporte_f, f"  Paso 3 (Prestamos DB): Prestamo creado con ID={prestamo_f.id}, Estado='{prestamo_f.estado}' (OK)")
-        registrar_linea_reporte(reporte_f, f"  Consistencia Catálogo: Stock disponible paso de {disp_l1_antes['disponibles']} a {disp_l1_despues['disponibles']}")
-        registrar_linea_reporte(reporte_f, f"  Duracion total de la transaccion: {dur_f}ms")
-        registrar_linea_reporte(reporte_f, "  Resultado: ESCENARIO 1 APROBADO EXITOSAMENTE")
-        registrar_linea_reporte(reporte_f, "")
-
-        # -------------------------------------------------------------
-        # FASE 3: Verificación de Idempotencia Estricta
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "[FASE 3] PRUEBA DE IDEMPOTENCIA: Reintento con misma clave")
-        registrar_linea_reporte(reporte_f, f"  Entrada: Peticion repetida con clave '{key_feliz}'")
-
-        disp_l1_antes_idemp = consultar_disponibilidad_catalogo(1)
-        prestamo_repetido, ctx_repetido = orchestrator.ejecutar(req_feliz)
-        disp_l1_despues_idemp = consultar_disponibilidad_catalogo(1)
-
-        assert prestamo_repetido.id == prestamo_f.id
-        assert prestamo_repetido.ejemplar_id == prestamo_f.ejemplar_id
-        assert disp_l1_despues_idemp["disponibles"] == disp_l1_antes_idemp["disponibles"]
-
-        registrar_linea_reporte(reporte_f, f"  Respuesta retornada: Prestamo ID={prestamo_repetido.id} (Mismo registro)")
-        registrar_linea_reporte(reporte_f, "  Stock en Catálogo: Inalterado (Cero dobles reservas)")
-        registrar_linea_reporte(reporte_f, "  Resultado: IDEMPOTENCIA APROBADA EXITOSAMENTE")
-        registrar_linea_reporte(reporte_f, "")
-
-        # -------------------------------------------------------------
-        # FASE 4: Escenario 2 (Fallo con Compensación Inversa)
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "[FASE 4] ESCENARIO 2: Fallo forzado en Paso 3 y Compensacion Inversa")
-        registrar_linea_reporte(reporte_f, "  Entrada: Solicitud para Libro 2 (Fundacion), induciendo fallo en Paso 3 (simular_fallo_paso3=True).")
-
-        disp_l2_inicio = consultar_disponibilidad_catalogo(2)
-        key_fallo = f"idemp-fallo-{uuid.uuid4().hex[:8]}"
-        req_fallo = prestamos_schemas.PrestamoInput(
-            socio_id=1,
-            libro_id=2,
-            idempotency_key=key_fallo,
-            simular_fallo_paso3=True,
-        )
-
-        t0 = time.monotonic()
-        fallo_ocurrido = False
+        self.dc("stop", "sanciones")
         try:
-            orchestrator.ejecutar(req_fallo)
-        except SagaStepError as err:
-            fallo_ocurrido = True
-            dur_fallo = round((time.monotonic() - t0) * 1000, 2)
-            registrar_linea_reporte(reporte_f, f"  Fallo capturado: {err.mensaje}")
+            self.dc("up", "-d", "--no-deps", "--force-recreate", "--wait", "prestamos")
+            assert self.pedir("lectura-sanciones-caida", "/api/v1/socios")
+            p = self.prestar("sanciones-caida", libro)
+            assert p["estado"] == "EN_REVISION"
+            desconocido = json.loads(self.ejecutar("prestamos", "import json\nfrom src.database import SessionLocal\n"
+                "from src.models import SagaTransaccion\nwith SessionLocal() as db:\n"
+                "    print(db.query(SagaTransaccion).filter_by(idempotency_key='sanciones-caida').one().sanciones_json)"))
+            assert all(desconocido[campo] is None for campo in ("tiene_sancion", "bloqueado", "multas_pendientes", "monto_total_multas"))
+            assert self.devolver(p)["estado"] == "ANULADO"
+        finally:
+            self.dc("up", "-d", "--no-deps", "--wait", "--wait-timeout", "60", "sanciones")
+        assert self.stock(libro) == stock
+        self.ok("Préstamos arranca sin Sanciones; fallback conserva desconocidos null y revisión cancelable")
+        self.consistencia("resiliencia")
 
-        assert fallo_ocurrido
-
-        disp_l2_fin = consultar_disponibilidad_catalogo(2)
-        reg_saga_fallo = db_prestamos.query(prestamos_models.SagaTransaccion).filter_by(idempotency_key=key_fallo).first()
-        prestamos_libro2 = db_prestamos.query(prestamos_models.Prestamo).filter_by(libro_id=2).all()
-
-        assert reg_saga_fallo.estado == SagaState.COMPENSADA.value
-        assert disp_l2_fin["disponibles"] == disp_l2_inicio["disponibles"]
-        assert len(prestamos_libro2) == 0
-
-        registrar_linea_reporte(reporte_f, f"  Compensacion Paso 1: Ejemplar {reg_saga_fallo.ejemplar_id} retornado a Catálogo via gRPC LiberarEjemplar")
-        registrar_linea_reporte(reporte_f, f"  Estado de inventario en Catálogo: {disp_l2_fin['disponibles']}/{disp_l2_fin['total']} disponibles (Consistencia restaurada)")
-        registrar_linea_reporte(reporte_f, f"  Estado de Saga en Préstamos: '{reg_saga_fallo.estado}'")
-        registrar_linea_reporte(reporte_f, f"  Registros huerfanos en tabla prestamos: {len(prestamos_libro2)}")
-        registrar_linea_reporte(reporte_f, f"  Duracion transaccion + compensacion: {dur_fallo}ms")
-        registrar_linea_reporte(reporte_f, "  Resultado: ESCENARIO 2 APROBADO EXITOSAMENTE")
-        registrar_linea_reporte(reporte_f, "")
-
-        # -------------------------------------------------------------
-        # FASE 5: Rechazo por Socio Sancionado con Compensación de Paso 1
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "[FASE 5] ESCENARIO DE NEGOCIO: Socio Sancionado y Rollback")
-        registrar_linea_reporte(reporte_f, "  Entrada: Solicitud para Libro 2 y Socio 2 (Carlos Mendoza, con suspension y multas vigentes).")
-
-        disp_l2_pre_sanc = consultar_disponibilidad_catalogo(2)
-        key_sanc = f"idemp-sanc-{uuid.uuid4().hex[:8]}"
-        req_sanc = prestamos_schemas.PrestamoInput(
-            socio_id=2,
-            libro_id=2,
-            idempotency_key=key_sanc,
-        )
-
-        sancion_detectada = False
+    def ejecutar_todo(self, usar_cache=False):
         try:
-            orchestrator.ejecutar(req_sanc)
-        except SocioSancionadoError as err:
-            sancion_detectada = True
-            registrar_linea_reporte(reporte_f, f"  Rechazo de negocio: {err.mensaje}")
+            self.resultado["docker"] = json.loads(subprocess.check_output(["docker", "version", "--format", "{{json .Server}}"], text=True))
+            self.dc("build", *([] if usar_cache else ["--no-cache"]))
+            self.dc("up", "-d", "--no-build", "--wait", "--wait-timeout", "120")
+            inspeccionar(self.proyecto, self.env, self.puerto)
+            if self.grupo == "todos":
+                self.resultado["gateway"] = verificar_gateway(self.proyecto, self.env, f"http://127.0.0.1:{self.puerto}")
+                self.env["RATE_LIMIT"] = "1000"
+                self.dc("up", "-d", "--no-deps", "--force-recreate", "--wait", "gateway")
+            self.preparar()
+            if self.grupo == "todos":
+                self.operaciones()
+                self.catalogo_fallando()
+            self.resiliencia()
+            antes = self.consistencia("antes-recrear")
+            self.dc("up", "-d", "--force-recreate", "--wait", "--wait-timeout", "120")
+            assert self.consistencia("despues-recrear") == antes
+            self.ok("segundo arranque de los cuatro servicios conserva filas e historial sin duplicación")
+            self.resultado["estado"] = "APROBADO"
+        except BaseException as exc:
+            self.resultado["estado"], self.resultado["error"] = "FALLO", str(exc)
+            raise
+        finally:
+            try:
+                self.guardar_logs()
+            finally:
+                try:
+                    self.dc("down", "--volumes", "--remove-orphans", "--rmi", "local")
+                    self.resultado["limpieza"] = "COMPLETADA"
+                except BaseException:
+                    self.resultado["limpieza"] = "FALLO"
+                    self.resultado["estado"] = "FALLO"
+                    raise
+                finally:
+                    (self.salida / "resultado.json").write_text(json.dumps(self.resultado, ensure_ascii=False, indent=2) + "\n")
+                    print(f"Resultado y diagnóstico: {self.salida}", flush=True)
 
-        assert sancion_detectada
-        disp_l2_post_sanc = consultar_disponibilidad_catalogo(2)
-        reg_sanc = db_prestamos.query(prestamos_models.SagaTransaccion).filter_by(idempotency_key=key_sanc).first()
 
-        assert disp_l2_post_sanc["disponibles"] == disp_l2_pre_sanc["disponibles"]
-        assert reg_sanc.estado == SagaState.COMPENSADA.value
-
-        registrar_linea_reporte(reporte_f, "  Paso 2 detecto sanciones activas -> Aborto transaccion y ejecuto compensacion de Paso 1")
-        registrar_linea_reporte(reporte_f, f"  Inventario en Catálogo: {disp_l2_post_sanc['disponibles']} disponibles (Stock preservado)")
-        registrar_linea_reporte(reporte_f, "  Resultado: RECHAZO POR SANCIONES APROBADO EXITOSAMENTE")
-        registrar_linea_reporte(reporte_f, "")
-
-        # -------------------------------------------------------------
-        # FASE 6: Resumen Cuantitativo Final
-        # -------------------------------------------------------------
-        registrar_linea_reporte(reporte_f, "=" * 80)
-        registrar_linea_reporte(reporte_f, "RESUMEN CUANTITATIVO PARA EL INFORME ABET 6:")
-        registrar_linea_reporte(reporte_f, f"  * Escenario 1 (Camino Feliz): Completado en {dur_f}ms | Consistencia estricta (100%)")
-        registrar_linea_reporte(reporte_f, f"  * Escenario 2 (Fallo con Compensacion): Reversion en {dur_fallo}ms | 0 reservas huerfanas")
-        registrar_linea_reporte(reporte_f, "  * Idempotencia: Verificada contra peticiones concurrentes/repetidas")
-        registrar_linea_reporte(reporte_f, "  * Regla de Negocio: Rechazo inmediato de socios sancionados sin fuga de stock")
-        registrar_linea_reporte(reporte_f, "=" * 80)
-
-    finally:
-        reporte_f.close()
-        if proc_catalogo:
-            proc_catalogo.terminate()
-            proc_catalogo.wait()
-        if proc_sanciones:
-            proc_sanciones.terminate()
-            proc_sanciones.wait()
-        print(f"\nReporte guardado exitosamente en: {ARCHIVO_REPORTE}")
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--grupo", choices=("todos", "resiliencia"), default="todos")
+    parser.add_argument("--salida", type=Path, help="Carpeta nueva para JSON, logs y copias SQLite desechables")
+    parser.add_argument("--usar-cache", action="store_true", help="Reutilizar capas de build; por defecto se construye sin caché")
+    args = parser.parse_args(argv)
+    salida = args.salida or Path(tempfile.mkdtemp(prefix="biblioteca-escenarios-"))
+    if args.salida:
+        salida.mkdir(parents=True, exist_ok=False)
+    Escenarios(salida, args.grupo).ejecutar_todo(args.usar_cache)
 
 
 if __name__ == "__main__":
-    ejecutar_demostracion()
+    main()

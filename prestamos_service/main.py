@@ -1,9 +1,10 @@
 import logging
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text
 
 from src.seed import seed_database
@@ -15,6 +16,8 @@ from src.routers.socios import router as socios_router
 from src.routers.prestamos import router as prestamos_router
 from src.schemas import HealthResponse, DependencyStatus, ErrorResponse
 from src import grpc_client, sanciones_client
+from src.auth import verificar_api_key
+from src import presupuestos
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,17 +36,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API de Préstamos - Red de Bibliotecas",
-    description="Servicio público REST para la gestión de socios y préstamos",
+    description="API REST interna con X-API-Key. Gateway publica /v1/socios y /v1/prestamos bajo /api/v1 con JWT; /health es diagnóstico interno.",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    responses={400: {"model": ErrorResponse, "description": "Validación inválida"},
+        "default": {"model": ErrorResponse, "description": "Error con código y mensaje; nunca implica éxito"}},
 )
 
 # MANEJADORES GLOBALES DE EXCEPCIONES (ESQUEMA OPENAPI: {codigo, mensaje})
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Garantiza que cualquier HTTPException retorne la estructura {"codigo": ..., "mensaje": ...}."""
     if isinstance(exc.detail, dict) and "codigo" in exc.detail and "mensaje" in exc.detail:
         return JSONResponse(
@@ -88,10 +93,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.exception_handler(Exception)
+async def error_inesperado_handler(request: Request, exc: Exception):
+    logger.error("Error no controlado en %s", request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"codigo": "ERROR_INTERNO", "mensaje": "Error interno del servicio"})
+
+
 @app.exception_handler(SagaError)
 async def saga_error_handler(request: Request, exc: SagaError):
     return JSONResponse(status_code=getattr(exc, "http_status", 500),
         content={"codigo": exc.codigo, "mensaje": exc.mensaje})
+
+
+@app.exception_handler(presupuestos.PresupuestoAgotado)
+async def presupuesto_error_handler(request: Request, exc: presupuestos.PresupuestoAgotado):
+    return JSONResponse(status_code=504, content={"codigo": exc.codigo, "mensaje": exc.mensaje})
 
 
 @app.exception_handler(OperationalError)
@@ -126,6 +142,13 @@ async def catalogo_error_handler(request: Request, exc: grpc_client.CatalogoErro
 
 app.include_router(socios_router)
 app.include_router(prestamos_router)
+
+
+@app.get("/internal/resiliencia", tags=["Diagnostico"], dependencies=[Depends(verificar_api_key)],
+    responses={401: {"model": ErrorResponse}}, description="Métricas por proceso y presupuestos efectivos. Solo red interna; no se publica por Gateway.")
+def metricas_resiliencia():
+    return {"presupuestos": presupuestos.configuracion(), "catalogo": grpc_client.metricas(),
+        "sanciones": sanciones_client.get_sanciones_client().get_metrics()}
 
 # Endpoint de chequeo de salud
 @app.get(

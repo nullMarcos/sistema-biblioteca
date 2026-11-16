@@ -9,12 +9,13 @@ import uuid
 from verificar_compose import compose, inspeccionar, puerto_libre
 
 
-def api(puerto, ruta, token=None, cuerpo=None, clave=None, metodo=None):
+def api(puerto, ruta, token=None, cuerpo=None, clave=None, metodo=None, headers_extra=None):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if clave:
         headers["Idempotency-Key"] = clave
+    headers.update(headers_extra or {})
     request = urllib.request.Request(f"http://127.0.0.1:{puerto}{ruta}", headers=headers, method=metodo,
         data=json.dumps(cuerpo).encode() if cuerpo is not None else None)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
