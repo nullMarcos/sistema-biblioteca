@@ -15,6 +15,46 @@ class SagaError(Exception):
         self.detalle = detalle or {}
 
 
+class ReglaPrestamoError(SagaError):
+    def __init__(self, mensaje, codigo, http_status=409):
+        super().__init__(mensaje, codigo)
+        self.http_status = http_status
+
+
+class OperacionPendienteError(SagaError):
+    def __init__(self, saga_id, mensaje="La operación requiere recuperación", http_status=503):
+        super().__init__(f"{mensaje}. Correlación: {saga_id}; consulte el estado con la misma clave", "OPERACION_PENDIENTE")
+        self.http_status = http_status
+
+
+class LeasePerdidoError(OperacionPendienteError):
+    pass
+
+
+def respuesta_error(exc):
+    """Resultado terminal persistible; conserva las causas HTTP de la API."""
+    from src import grpc_client as catalogo
+
+    if hasattr(exc, "http_status"):
+        http = exc.http_status
+    elif isinstance(exc, (SocioSancionadoError, catalogo.SinStockError, catalogo.CatalogoConflictoError)):
+        http = 409
+    elif isinstance(exc, catalogo.CatalogoTimeoutError):
+        http = 504
+    elif isinstance(exc, (catalogo.CatalogoNoDisponibleError, catalogo.CircuitBreakerOpenError)):
+        http = 503
+    elif isinstance(exc, catalogo.CatalogoNotFoundError):
+        http = 404
+    elif isinstance(exc, catalogo.CatalogoInvalidArgumentError):
+        http = 400
+    elif isinstance(exc, catalogo.CatalogoError):
+        http = 502
+    else:
+        http = 500
+    return {"http": http, "error": {"codigo": getattr(exc, "codigo", "ERROR_SAGA"),
+        "mensaje": getattr(exc, "mensaje", "No se pudo confirmar la operación")}}
+
+
 class SagaStepError(SagaError):
     """Error originado durante la ejecución de un paso específico de la Saga."""
 

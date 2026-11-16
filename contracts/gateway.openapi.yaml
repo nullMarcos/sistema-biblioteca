@@ -1,0 +1,1410 @@
+openapi: 3.1.0
+info:
+  title: API Gateway Biblioteca
+  description: 'Entrada pública: JWT, limitación de tasa y proxy REST /api/v1.'
+  version: 0.1.0
+paths:
+  /auth/login:
+    post:
+      summary: Login
+      operationId: login_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Health
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Default Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/socios:
+    get:
+      tags:
+      - Socios
+      summary: Listar Socios
+      operationId: gateway_listar_socios_v1_socios_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: rut
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rut
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SocioOut'
+                title: Response Listar Socios V1 Socios Get
+        '400':
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Socios
+      summary: Crear Socio
+      operationId: gateway_crear_socio_v1_socios_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocioInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocioOut'
+        '400':
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/socios
+  /api/v1/socios/{socio_id}:
+    get:
+      tags:
+      - Socios
+      summary: Consultar Socio
+      operationId: gateway_consultar_socio_v1_socios__socio_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: socio_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Socio Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocioOut'
+        '400':
+          description: Error en la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Socio no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: RUT o correo duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error de persistencia local
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/socios/{socio_id}
+  /api/v1/prestamos:
+    get:
+      tags:
+      - Prestamos
+      summary: Listar Prestamos
+      description: Se filtra por el parámetro [estado], si es None se listan todos los préstamos.
+      operationId: gateway_listar_prestamos_v1_prestamos_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: estado
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Estado
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PrestamoOut'
+                title: Response Listar Prestamos V1 Prestamos Get
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Prestamos
+      summary: Crear Prestamo
+      description: 'Registra el préstamo de un libro ejecutando la transacción distribuida con el patrón Saga.
+
+        Coordina Reserva en Catálogo, Verificación en Sanciones y Persistencia en Préstamos.'
+      operationId: gateway_crear_prestamo_v1_prestamos_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrestamoInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Inyección de fallo no habilitada o actor no autorizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos
+  /api/v1/prestamos/saga/{saga_id}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Estado Saga
+      description: Consulta el estado auditado de una transacción Saga por su UUID.
+      operationId: gateway_consultar_estado_saga_v1_prestamos_saga__saga_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: saga_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Saga Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStatusOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos/saga/{saga_id}
+  /api/v1/prestamos/saga/idempotency/{idempotency_key}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Saga Por Idempotencia
+      description: Consulta el estado de una transacción Saga por su clave de idempotencia.
+      operationId: gateway_consultar_saga_por_idempotencia_v1_prestamos_saga_idempotency__idempotency_key__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: idempotency_key
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStatusOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos/saga/idempotency/{idempotency_key}
+  /api/v1/prestamos/{prestamo_id}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Prestamo
+      operationId: gateway_consultar_prestamo_v1_prestamos__prestamo_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Prestamos
+      summary: Eliminar Prestamo
+      description: Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar.
+      operationId: gateway_eliminar_prestamo_v1_prestamos__prestamo_id__delete
+      deprecated: true
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos/{prestamo_id}
+  /api/v1/prestamos/devoluciones/idempotency/{idempotency_key}:
+    get:
+      tags:
+      - Prestamos
+      summary: Consultar Devolucion
+      operationId: gateway_consultar_devolucion_v1_prestamos_devoluciones_idempotency__idempotency_key__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: idempotency_key
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          title: Idempotency Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevolucionStatusOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos/devoluciones/idempotency/{idempotency_key}
+  /api/v1/prestamos/{prestamo_id}/devolucion:
+    post:
+      tags:
+      - Prestamos
+      summary: Eliminar Prestamo
+      description: Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar.
+      operationId: gateway_eliminar_prestamo_v1_prestamos__prestamo_id__devolucion_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: prestamo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          exclusiveMinimum: 0
+          title: Prestamo Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 64
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrestamoOut'
+        '400':
+          description: Error en los parámetros de la solicitud
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Error con código y mensaje; nunca implica éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT ausente, inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recurso no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflicto en la operación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error real de persistencia o ejecución
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Respuesta o protocolo remoto inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Tiempo de espera agotado; una escritura puede requerir consulta por identidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Límite de peticiones; Retry-After indica la espera
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    x-upstream-path: /v1/prestamos/{prestamo_id}/devolucion
+components:
+  schemas:
+    ErrorResponse:
+      properties:
+        codigo:
+          type: string
+          title: Codigo
+        mensaje:
+          type: string
+          title: Mensaje
+      type: object
+      required:
+      - codigo
+      - mensaje
+      title: ErrorResponse
+    LoginRequest:
+      properties:
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - username
+      - password
+      title: LoginRequest
+    DependencyStatus:
+      properties:
+        database:
+          type: string
+          title: Database
+        catalogo_grpc:
+          type: string
+          title: Catalogo Grpc
+        circuit_breaker:
+          type: string
+          title: Circuit Breaker
+        sanciones_circuit_breaker:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sanciones Circuit Breaker
+      type: object
+      required:
+      - database
+      - catalogo_grpc
+      - circuit_breaker
+      title: DependencyStatus
+    DevolucionStatusOut:
+      properties:
+        operacion_id:
+          type: string
+          title: Operacion Id
+        idempotency_key:
+          type: string
+          title: Idempotency Key
+        prestamo_id:
+          type: integer
+          title: Prestamo Id
+        reserva_id:
+          type: string
+          title: Reserva Id
+        estado:
+          type: string
+          enum:
+          - PENDIENTE
+          - COMPLETADA
+          title: Estado
+        estado_final:
+          type: string
+          enum:
+          - DEVUELTO
+          - ANULADO
+          title: Estado Final
+        accion_pendiente:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Accion Pendiente
+        error_detalle:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detalle
+        recuperacion_intentos:
+          type: integer
+          title: Recuperacion Intentos
+        proximo_intento:
+          type: number
+          title: Proximo Intento
+        lease_until:
+          type: number
+          title: Lease Until
+        fecha_creacion:
+          type: string
+          format: date-time
+          title: Fecha Creacion
+        fecha_actualizacion:
+          type: string
+          format: date-time
+          title: Fecha Actualizacion
+      type: object
+      required:
+      - operacion_id
+      - idempotency_key
+      - prestamo_id
+      - reserva_id
+      - estado
+      - estado_final
+      - recuperacion_intentos
+      - proximo_intento
+      - lease_until
+      - fecha_creacion
+      - fecha_actualizacion
+      title: DevolucionStatusOut
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        service:
+          type: string
+          title: Service
+        dependencies:
+          $ref: '#/components/schemas/DependencyStatus'
+      type: object
+      required:
+      - status
+      - service
+      - dependencies
+      title: HealthResponse
+    PrestamoInput:
+      properties:
+        socio_id:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Socio Id
+        libro_id:
+          type: integer
+          maximum: 2147483647.0
+          exclusiveMinimum: 0.0
+          title: Libro Id
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 1
+            pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+          - type: 'null'
+          title: Idempotency Key
+          description: Identidad estable de la solicitud
+        simular_fallo_paso3:
+          type: boolean
+          title: Simular Fallo Paso3
+          description: 'Solo demostración: requiere HABILITAR_FALLOS_DEMO=true y actor administrador; de otro modo
+            devuelve 403'
+          default: false
+      type: object
+      required:
+      - socio_id
+      - libro_id
+      title: PrestamoInput
+    PrestamoOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+        socio_id:
+          type: integer
+          title: Socio Id
+        libro_id:
+          type: integer
+          title: Libro Id
+        ejemplar_id:
+          type: integer
+          title: Ejemplar Id
+        fecha_prestamo:
+          type: string
+          format: date-time
+          title: Fecha Prestamo
+        fecha_limite:
+          type: string
+          format: date
+          title: Fecha Limite
+        fecha_devolucion:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Fecha Devolucion
+        estado:
+          type: string
+          enum:
+          - ACTIVO
+          - EN_REVISION
+          - DEVOLUCION_PENDIENTE
+          - DEVUELTO
+          - ANULADO
+          - COMPENSADO
+          title: Estado
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        _links:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Links
+          description: Enlaces internos /v1. ACTIVO ofrece devolver por POST; EN_REVISION cancelar por POST. Gateway
+            publica /api/v1.
+      type: object
+      required:
+      - id
+      - socio_id
+      - libro_id
+      - ejemplar_id
+      - fecha_prestamo
+      - fecha_limite
+      - estado
+      title: PrestamoOut
+    SagaStatusOut:
+      properties:
+        saga_id:
+          type: string
+          title: Saga Id
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        socio_id:
+          type: integer
+          title: Socio Id
+        libro_id:
+          type: integer
+          title: Libro Id
+        ejemplar_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Ejemplar Id
+        prestamo_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Prestamo Id
+        estado:
+          type: string
+          enum:
+          - INICIADA
+          - EJEMPLAR_RESERVADO
+          - SANCIONES_VERIFICADAS
+          - COMPLETADA
+          - COMPENSANDO
+          - COMPENSACION_PENDIENTE
+          - COMPENSADA
+          - FALLIDA
+          title: Estado
+        paso_actual:
+          type: string
+          title: Paso Actual
+        error_detalle:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detalle
+        reserva_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reserva Id
+        accion_pendiente:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Accion Pendiente
+        recuperacion_intentos:
+          type: integer
+          title: Recuperacion Intentos
+          default: 0
+        proximo_intento:
+          type: number
+          title: Proximo Intento
+          default: 0
+        lease_until:
+          type: number
+          title: Lease Until
+          default: 0
+        fecha_creacion:
+          type: string
+          format: date-time
+          title: Fecha Creacion
+        fecha_actualizacion:
+          type: string
+          format: date-time
+          title: Fecha Actualizacion
+      type: object
+      required:
+      - saga_id
+      - socio_id
+      - libro_id
+      - estado
+      - paso_actual
+      - fecha_creacion
+      - fecha_actualizacion
+      title: SagaStatusOut
+    SocioInput:
+      properties:
+        rut:
+          type: string
+          maxLength: 12
+          title: Rut
+          description: RUT del socio (ej. 11.111.111-1)
+        nombre:
+          type: string
+          title: Nombre
+        correo:
+          type: string
+          format: email
+          title: Correo
+      type: object
+      required:
+      - rut
+      - nombre
+      - correo
+      title: SocioInput
+    SocioOut:
+      properties:
+        rut:
+          type: string
+          maxLength: 12
+          title: Rut
+          description: RUT del socio (ej. 11.111.111-1)
+        nombre:
+          type: string
+          title: Nombre
+        correo:
+          type: string
+          format: email
+          title: Correo
+        id:
+          type: integer
+          title: Id
+        prestamos:
+          items:
+            $ref: '#/components/schemas/PrestamoOut'
+          type: array
+          title: Prestamos
+          default: []
+      type: object
+      required:
+      - rut
+      - nombre
+      - correo
+      - id
+      title: SocioOut
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
+servers:
+- url: http://gateway:8080
+  description: Entrada pública (usar el host/puerto de Gateway)

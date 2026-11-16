@@ -60,6 +60,16 @@ class CatalogoStub:
                 request_serializer=catalogo__pb2.LibroRequest.SerializeToString,
                 response_deserializer=catalogo__pb2.LibroDTO.FromString,
                 _registered_method=True)
+        self.ConsultarOperacion = channel.unary_unary(
+                '/catalogo.Catalogo/ConsultarOperacion',
+                request_serializer=catalogo__pb2.OperacionRequest.SerializeToString,
+                response_deserializer=catalogo__pb2.ReservaResponse.FromString,
+                _registered_method=True)
+        self.CancelarReserva = channel.unary_unary(
+                '/catalogo.Catalogo/CancelarReserva',
+                request_serializer=catalogo__pb2.CancelacionRequest.SerializeToString,
+                response_deserializer=catalogo__pb2.LiberarResponse.FromString,
+                _registered_method=True)
 
 
 class CatalogoServicer:
@@ -88,7 +98,7 @@ class CatalogoServicer:
         raise NotImplementedError('Method not implemented!')
 
     def ListarCatalogo(self, request, context):
-        """RPCs adicionales para gestion completa del catalogo (Integrante 3)
+        """RPCs adicionales para gestion completa del catalogo
         Lista los libros del catalogo con soporte para filtros opcionales.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -97,6 +107,20 @@ class CatalogoServicer:
 
     def ObtenerLibro(self, request, context):
         """Obtiene el detalle completo de un libro incluyendo la lista de sus ejemplares.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ConsultarOperacion(self, request, context):
+        """Conciliacion interna por identidad; no se infiere el resultado de un timeout.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelarReserva(self, request, context):
+        """Cancela incluso si la reserva aun no llego; conserva una tumba terminal.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -129,6 +153,16 @@ def add_CatalogoServicer_to_server(servicer, server):
                     servicer.ObtenerLibro,
                     request_deserializer=catalogo__pb2.LibroRequest.FromString,
                     response_serializer=catalogo__pb2.LibroDTO.SerializeToString,
+            ),
+            'ConsultarOperacion': grpc.unary_unary_rpc_method_handler(
+                    servicer.ConsultarOperacion,
+                    request_deserializer=catalogo__pb2.OperacionRequest.FromString,
+                    response_serializer=catalogo__pb2.ReservaResponse.SerializeToString,
+            ),
+            'CancelarReserva': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelarReserva,
+                    request_deserializer=catalogo__pb2.CancelacionRequest.FromString,
+                    response_serializer=catalogo__pb2.LiberarResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -267,6 +301,60 @@ class Catalogo:
             '/catalogo.Catalogo/ObtenerLibro',
             catalogo__pb2.LibroRequest.SerializeToString,
             catalogo__pb2.LibroDTO.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ConsultarOperacion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/catalogo.Catalogo/ConsultarOperacion',
+            catalogo__pb2.OperacionRequest.SerializeToString,
+            catalogo__pb2.ReservaResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelarReserva(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/catalogo.Catalogo/CancelarReserva',
+            catalogo__pb2.CancelacionRequest.SerializeToString,
+            catalogo__pb2.LiberarResponse.FromString,
             options,
             channel_credentials,
             insecure,

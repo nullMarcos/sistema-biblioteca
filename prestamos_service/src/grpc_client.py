@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import logging
+import threading
 import grpc
 
 PROTOS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "protos"))
@@ -11,17 +12,20 @@ if PROTOS_DIR not in sys.path:
 import catalogo_pb2
 import catalogo_pb2_grpc
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from src.presupuestos import CATALOGO_TIMEOUT, CATALOGO_RETRIES, CATALOGO_BACKOFF, restante
 
 logger = logging.getLogger(__name__)
 
 CATALOGO_HOST = os.getenv("CATALOGO_GRPC_HOST", "localhost")
 CATALOGO_PORT = os.getenv("CATALOGO_GRPC_PORT", "50051")
-TIME_OUT_SEGS = float(os.getenv("CATALOGO_TIMEOUT_SEGS", "2.0"))
-MAX_RETRIES = int(os.getenv("CATALOGO_MAX_RETRIES", "2"))
-INITIAL_BACKOFF_SEGS = float(os.getenv("CATALOGO_INITIAL_BACKOFF_SEGS", "0.1"))
+TIME_OUT_SEGS = CATALOGO_TIMEOUT
+MAX_RETRIES = CATALOGO_RETRIES
+INITIAL_BACKOFF_SEGS = CATALOGO_BACKOFF
 
-canal = grpc.insecure_channel(f"{CATALOGO_HOST}:{CATALOGO_PORT}")
+canal = grpc.insecure_channel(f"{CATALOGO_HOST}:{CATALOGO_PORT}", options=(("grpc.enable_retries", 0),))
 stub = catalogo_pb2_grpc.CatalogoStub(canal)
+_metricas_lock = threading.Lock()
+_metricas = {"calls": 0, "attempts": 0, "last_duration_ms": 0}
 
 
 # --- JERARQUÍA DE EXCEPCIONES DE CATÁLOGO ---
@@ -78,6 +82,11 @@ class LiberacionFallidaError(CatalogoError):
         super().__init__(motivo, codigo="LIBERACION_FALLIDA")
 
 
+class CatalogoConflictoError(CatalogoError):
+    def __init__(self, mensaje="Conflicto de identidad o estado de reserva"):
+        super().__init__(mensaje, codigo="CATALOGO_CONFLICTO")
+
+
 # --- CIRCUIT BREAKER ---
 
 catalogo_circuit_breaker = CircuitBreaker(
@@ -103,6 +112,8 @@ def _traducir_rpc_error(e: grpc.RpcError) -> CatalogoError:
         return CatalogoNotFoundError(f"Recurso no encontrado en Catálogo: {details or 'no encontrado'}")
     elif code == grpc.StatusCode.INVALID_ARGUMENT:
         return CatalogoInvalidArgumentError(f"Argumento inválido enviado a Catálogo: {details or 'argumento inválido'}")
+    elif code in (grpc.StatusCode.ALREADY_EXISTS, grpc.StatusCode.FAILED_PRECONDITION):
+        return CatalogoConflictoError(details)
     else:
         return CatalogoError(f"Error en Catálogo ({code}): {details}", codigo="ERROR_CATALOGO")
 
@@ -114,59 +125,95 @@ def _ejecutar_con_reintentos(operacion, *args, **kwargs):
     Ejecuta una llamada remota aplicando reintentos con backoff exponencial
     exclusivamente ante errores transitorios de red/disponibilidad.
     """
-    intentos = 0
-    backoff = INITIAL_BACKOFF_SEGS
-
-    while True:
-        try:
-            return operacion(*args, **kwargs)
-        except grpc.RpcError as e:
-            err = _traducir_rpc_error(e)
-            if isinstance(err, (CatalogoNoDisponibleError, CatalogoTimeoutError)) and intentos < MAX_RETRIES:
-                intentos += 1
-                logger.warning(
-                    "Fallo transitorio gRPC (%s). Reintento %d/%d tras %.2fs...",
-                    err.mensaje,
-                    intentos,
-                    MAX_RETRIES,
-                    backoff,
-                )
+    inicio = time.monotonic()
+    presupuesto = TIME_OUT_SEGS * (MAX_RETRIES + 1) + INITIAL_BACKOFF_SEGS * (2 ** MAX_RETRIES - 1)
+    limite = inicio + restante(presupuesto)
+    intentos, backoff = 0, INITIAL_BACKOFF_SEGS
+    try:
+        while True:
+            disponible = limite - time.monotonic()
+            if disponible <= 0:
+                raise CatalogoTimeoutError("Presupuesto total de gRPC agotado")
+            llamada = {**kwargs, "timeout": restante(min(kwargs.get("timeout", TIME_OUT_SEGS), disponible))}
+            intentos += 1
+            try:
+                return operacion(*args, **llamada)
+            except grpc.RpcError as exc:
+                err = _traducir_rpc_error(exc)
+                if (not isinstance(err, CatalogoNoDisponibleError) or intentos > MAX_RETRIES
+                        or limite - time.monotonic() <= backoff):
+                    raise err from exc
+                logger.warning("gRPC intento=%s/%s codigo=%s backoff_s=%.3f", intentos, MAX_RETRIES + 1, err.codigo, backoff)
                 time.sleep(backoff)
                 backoff *= 2
-                continue
-            raise err from e
+    finally:
+        duracion = round((time.monotonic() - inicio) * 1000, 3)
+        with _metricas_lock:
+            _metricas["calls"] += 1
+            _metricas["attempts"] += intentos
+            _metricas["last_duration_ms"] = duracion
+        logger.info("gRPC operacion=%s intentos=%s duracion_ms=%s", getattr(args[0], "operacion_id", "lectura") if args else "lectura", intentos, duracion)
+
+
+def metricas():
+    with _metricas_lock:
+        return {**_metricas, "timeout_s": TIME_OUT_SEGS, "max_retries": MAX_RETRIES,
+            "initial_backoff_s": INITIAL_BACKOFF_SEGS, "circuit_breaker": catalogo_circuit_breaker.get_stats()}
 
 
 # --- OPERACIONES DEL CLIENTE ---
 
-def _reservar_raw(libro_id: int) -> int:
-    request = catalogo_pb2.ReservaRequest(libro_id=libro_id)
+def _reservar_raw(libro_id: int, operacion_id: str) -> int:
+    request = catalogo_pb2.ReservaRequest(libro_id=libro_id, operacion_id=operacion_id)
     response = _ejecutar_con_reintentos(stub.ReservarEjemplar, request, timeout=TIME_OUT_SEGS)
 
-    if not response.exito:
+    if response.estado in {"CANCELADA", "LIBERADA"}:
+        raise CatalogoConflictoError("La reserva ya está terminada: " + response.estado)
+    if response.estado == "SIN_STOCK" and not response.exito and response.ejemplar_id == 0:
         raise SinStockError(response.motivo or "No hay stock disponible")
+    if response.estado != "RESERVADA" or not response.exito or response.ejemplar_id <= 0:
+        raise CatalogoError("Catálogo no confirmó una reserva identificable y vigente", codigo="RESPUESTA_CATALOGO_INVALIDA")
 
     return response.ejemplar_id
 
 
-def reservar_ejemplar(libro_id: int) -> int:
+def reservar_ejemplar(libro_id: int, operacion_id: str) -> int:
     """Reserva un ejemplar en Catálogo protegido por Circuit Breaker y política de reintentos."""
-    return catalogo_circuit_breaker.call(_reservar_raw, libro_id)
+    return catalogo_circuit_breaker.call(_reservar_raw, libro_id, operacion_id)
 
 
-def _liberar_raw(ejemplar_id: int) -> bool:
-    request = catalogo_pb2.LiberarRequest(ejemplar_id=ejemplar_id)
+def _liberar_raw(ejemplar_id: int, operacion_id: str, reserva_id: str) -> bool:
+    request = catalogo_pb2.LiberarRequest(ejemplar_id=ejemplar_id, operacion_id=operacion_id, reserva_id=reserva_id)
     response = _ejecutar_con_reintentos(stub.LiberarEjemplar, request, timeout=TIME_OUT_SEGS)
 
     if not response.exito:
         raise LiberacionFallidaError(response.motivo or "No se pudo liberar el ejemplar en Catalogo")
+    if response.estado != "LIBERADA":
+        raise CatalogoError("Catálogo no confirmó el estado de liberación", codigo="RESPUESTA_CATALOGO_INVALIDA")
 
     return True
 
 
-def liberar_ejemplar(ejemplar_id: int) -> bool:
+def liberar_ejemplar(ejemplar_id: int, operacion_id: str, reserva_id: str) -> bool:
     """Libera un ejemplar en Catálogo protegido por Circuit Breaker y política de reintentos."""
-    return catalogo_circuit_breaker.call(_liberar_raw, ejemplar_id)
+    return catalogo_circuit_breaker.call(_liberar_raw, ejemplar_id, operacion_id, reserva_id)
+
+
+def cancelar_reserva(libro_id: int, reserva_id: str, operacion_id: str) -> bool:
+    def ejecutar():
+        request = catalogo_pb2.CancelacionRequest(libro_id=libro_id, reserva_id=reserva_id, operacion_id=operacion_id)
+        response = _ejecutar_con_reintentos(stub.CancelarReserva, request, timeout=TIME_OUT_SEGS)
+        if not response.exito:
+            raise LiberacionFallidaError(response.motivo)
+        if response.estado != "CANCELADA":
+            raise CatalogoError("Catálogo no confirmó el estado de cancelación", codigo="RESPUESTA_CATALOGO_INVALIDA")
+        return True
+    return catalogo_circuit_breaker.call(ejecutar)
+
+
+def consultar_operacion(operacion_id: str):
+    return catalogo_circuit_breaker.call(_ejecutar_con_reintentos, stub.ConsultarOperacion,
+        catalogo_pb2.OperacionRequest(operacion_id=operacion_id), timeout=TIME_OUT_SEGS)
 
 
 def verificar_salud_grpc(timeout: float = 1.0) -> dict:

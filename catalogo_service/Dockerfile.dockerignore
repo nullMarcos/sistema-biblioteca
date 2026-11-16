@@ -1,0 +1,22 @@
+# Contexto raíz, limitado al servicio y a sus entradas de build.
+**
+!requirements/
+!requirements/constraints.txt
+!contracts/
+!contracts/catalogo.proto
+!scripts/
+!scripts/generar_protos.py
+!scripts/migrar_sqlite.py
+!catalogo_service/
+!catalogo_service/requirements.txt
+!catalogo_service/main.py
+!catalogo_service/src/
+!catalogo_service/src/**
+!catalogo_service/migrations/
+!catalogo_service/migrations/*.sql
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/.env*

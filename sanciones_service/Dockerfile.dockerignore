@@ -1,0 +1,14 @@
+**
+!requirements/
+!requirements/constraints.txt
+!sanciones_service/
+!sanciones_service/requirements.txt
+!sanciones_service/main.py
+!sanciones_service/src/
+!sanciones_service/src/**
+**/__pycache__/
+**/*.pyc
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/.env*

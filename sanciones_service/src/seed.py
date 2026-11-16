@@ -11,13 +11,14 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.database import Base, engine, SessionLocal
+from src.database import Base, SessionLocal
 from src.models import Socio, Bloqueo, Multa
 
 
@@ -31,18 +32,15 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
         should_close = True
 
     try:
-        Base.metadata.create_all(bind=engine)
-
-        if reset:
-            session.query(Multa).delete()
-            session.query(Bloqueo).delete()
-            session.query(Socio).delete()
-            session.commit()
-            print("ℹ️  Tablas de sanciones limpiadas exitosamente.")
-        else:
-            existing = session.query(Socio).count()
-            if existing > 0:
-                return {"socios": 0, "bloqueos": 0, "multas": 0}
+        Base.metadata.create_all(bind=session.get_bind())
+        if session.new or session.dirty or session.deleted:
+            raise ValueError("La semilla requiere una sesión sin cambios pendientes")
+        session.execute(text("BEGIN IMMEDIATE"))
+        if any(session.query(modelo).first() is not None for modelo in (Socio, Bloqueo, Multa)):
+            if reset:
+                raise ValueError("No se reinicializa una base poblada; use una base desechable nueva")
+            session.rollback()
+            return {"socios": 0, "bloqueos": 0, "multas": 0}
 
         ahora = datetime.now(timezone.utc)
 
@@ -103,7 +101,7 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
 
 def main():
     parser = argparse.ArgumentParser(description="Poblar base de datos de sanciones_service.")
-    parser.add_argument("--reset", action="store_true", help="Elimina los datos existentes antes de poblar.")
+    parser.add_argument("--reset", action="store_true", help="Solo se acepta si la base está vacía.")
     args = parser.parse_args()
     seed_database(reset=args.reset)
 

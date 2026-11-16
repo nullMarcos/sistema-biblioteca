@@ -1,14 +1,22 @@
 from decimal import Decimal
-from typing import List, Optional
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Optional, Annotated
+from datetime import datetime, timezone
+from pydantic import BaseModel, ConfigDict, Field, AfterValidator
+
+
+def fecha_utc(valor):
+    # El driver SQLite pierde la zona incluso con DateTime(timezone=True).
+    return (valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor.astimezone(timezone.utc))
+
+
+FechaUTC = Annotated[datetime, AfterValidator(fecha_utc)]
 
 
 class BloqueoOut(BaseModel):
     id: int
     motivo: str
-    fecha_inicio: datetime
-    fecha_fin: Optional[datetime] = None
+    fecha_inicio: FechaUTC
+    fecha_fin: Optional[FechaUTC] = None
     estado: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -22,8 +30,8 @@ class MultaOut(BaseModel):
     dias_atraso: Optional[int] = None
     monto: Optional[Decimal] = None
     estado: str
-    fecha_emision: datetime
-    fecha_pago: Optional[datetime] = None
+    fecha_emision: FechaUTC
+    fecha_pago: Optional[FechaUTC] = None
 
     model_config = ConfigDict(from_attributes=True)
 

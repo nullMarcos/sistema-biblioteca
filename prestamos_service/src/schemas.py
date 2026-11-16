@@ -1,6 +1,6 @@
-from typing import List, Optional, Annotated
-from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict, StringConstraints, Field
+from typing import List, Optional, Annotated, Literal
+from datetime import datetime, date, timezone
+from pydantic import BaseModel, ConfigDict, StringConstraints, Field, AfterValidator
 try:
     import email_validator  # noqa: F401
     from pydantic import EmailStr
@@ -18,23 +18,36 @@ class SocioOut(SocioInput):
     prestamos: List["PrestamoOut"] = []
     model_config = ConfigDict(from_attributes=True)
 
+ClaveIdempotencia = Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")]
+
+
+def fecha_utc(valor):
+    # CURRENT_TIMESTAMP de SQLite está en UTC, pero el driver devuelve naive.
+    return (valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor.astimezone(timezone.utc))
+
+
+FechaUTC = Annotated[datetime, AfterValidator(fecha_utc)]
+
+
 class PrestamoInput(BaseModel):
-    socio_id: int
-    libro_id: int
-    idempotency_key: Optional[str] = Field(None, description="Clave única para garantizar idempotencia de la transacción")
-    simular_fallo_paso3: Optional[bool] = Field(False, description="Bandera para inducir fallo en el paso 3 y verificar compensación")
+    socio_id: int = Field(gt=0, strict=True)
+    libro_id: int = Field(gt=0, le=2147483647, strict=True)
+    idempotency_key: Optional[ClaveIdempotencia] = Field(None, description="Identidad estable de la solicitud")
+    simular_fallo_paso3: bool = Field(False, strict=True,
+        description="Solo demostración: requiere HABILITAR_FALLOS_DEMO=true y actor administrador; de otro modo devuelve 403")
 
 class PrestamoOut(BaseModel):
     id: int
     socio_id: int
     libro_id: int
     ejemplar_id: int
-    fecha_prestamo: datetime
+    fecha_prestamo: FechaUTC
     fecha_limite: date
-    fecha_devolucion: Optional[datetime] = None
-    estado: str
+    fecha_devolucion: Optional[FechaUTC] = None
+    estado: Literal["ACTIVO", "EN_REVISION", "DEVOLUCION_PENDIENTE", "DEVUELTO", "ANULADO", "COMPENSADO"]
     idempotency_key: Optional[str] = None
-    links: Optional[dict] = Field(None, alias="_links")
+    links: Optional[dict] = Field(None, alias="_links",
+        description="Enlaces internos /v1. ACTIVO ofrece devolver por POST; EN_REVISION cancelar por POST. Gateway publica /api/v1.")
     model_config = ConfigDict(from_attributes=True)
 
 class SagaStatusOut(BaseModel):
@@ -44,11 +57,34 @@ class SagaStatusOut(BaseModel):
     libro_id: int
     ejemplar_id: Optional[int] = None
     prestamo_id: Optional[int] = None
-    estado: str
+    estado: Literal["INICIADA", "EJEMPLAR_RESERVADO", "SANCIONES_VERIFICADAS", "COMPLETADA", "COMPENSANDO",
+        "COMPENSACION_PENDIENTE", "COMPENSADA", "FALLIDA"]
     paso_actual: str
     error_detalle: Optional[str] = None
-    fecha_creacion: datetime
-    fecha_actualizacion: datetime
+    reserva_id: Optional[str] = None
+    accion_pendiente: Optional[str] = None
+    recuperacion_intentos: int = 0
+    proximo_intento: float = 0
+    lease_until: float = 0
+    fecha_creacion: FechaUTC
+    fecha_actualizacion: FechaUTC
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DevolucionStatusOut(BaseModel):
+    operacion_id: str
+    idempotency_key: str
+    prestamo_id: int
+    reserva_id: str
+    estado: Literal["PENDIENTE", "COMPLETADA"]
+    estado_final: Literal["DEVUELTO", "ANULADO"]
+    accion_pendiente: Optional[str] = None
+    error_detalle: Optional[str] = None
+    recuperacion_intentos: int
+    proximo_intento: float
+    lease_until: float
+    fecha_creacion: FechaUTC
+    fecha_actualizacion: FechaUTC
     model_config = ConfigDict(from_attributes=True)
 
 class ErrorResponse(BaseModel):

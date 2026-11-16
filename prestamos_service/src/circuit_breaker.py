@@ -1,8 +1,9 @@
 import enum
-import time
 import logging
+import math
 import threading
-from typing import Callable, Any, Tuple, Type
+import time
+from typing import Any, Callable, Tuple, Type
 
 logger = logging.getLogger(__name__)
 
@@ -14,147 +15,100 @@ class CircuitState(str, enum.Enum):
 
 
 class CircuitBreakerOpenError(Exception):
-    """Excepción lanzada cuando el circuito está abierto y se rechaza la llamada (fail-fast)."""
-
-    def __init__(
-        self,
-        mensaje: str = "El circuito hacia el servicio de Catálogo está abierto. El servicio no está disponible temporalmente.",
-        codigo: str = "CIRCUITO_ABIERTO",
-    ):
+    def __init__(self, mensaje="El circuito remoto no admite llamadas temporalmente.", codigo="CIRCUITO_ABIERTO"):
         super().__init__(mensaje)
-        self.mensaje = mensaje
-        self.codigo = codigo
+        self.mensaje, self.codigo = mensaje, codigo
 
 
 class CircuitBreaker:
-    """
-    Implementación del patrón Circuit Breaker con estados CLOSED, OPEN y HALF_OPEN.
-    Protege llamadas remotas frente a fallos en cascada y proporciona fail-fast.
-    """
+    """Una sonda HALF_OPEN; resultados tardíos solo afectan su generación original."""
 
-    def __init__(
-        self,
-        failure_threshold: int = 3,
-        recovery_timeout: float = 10.0,
-        half_open_success_threshold: int = 1,
-        expected_exceptions: Tuple[Type[Exception], ...] = (Exception,),
-        name: str = "default",
-    ):
+    def __init__(self, failure_threshold: int = 3, recovery_timeout: float = 10.0,
+            half_open_success_threshold: int = 1, expected_exceptions: Tuple[Type[Exception], ...] = (Exception,),
+            name: str = "default"):
+        if failure_threshold < 1 or half_open_success_threshold < 1 or not math.isfinite(recovery_timeout) or recovery_timeout <= 0:
+            raise ValueError("Umbrales y tiempo de recuperación deben ser positivos")
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_success_threshold = half_open_success_threshold
         self.expected_exceptions = expected_exceptions
         self.name = name
-
         self._state = CircuitState.CLOSED
-        self._failure_count = 0
-        self._success_count = 0
+        self._failure_count = self._success_count = 0
+        self._generation = self._rejected_calls = 0
+        self._probe_active = False
         self._last_state_change = time.monotonic()
         self._lock = threading.Lock()
 
+    def _transicion(self, estado):
+        previo = self._state
+        self._state = estado
+        self._generation += 1
+        self._probe_active = False
+        self._success_count = 0
+        self._last_state_change = time.monotonic()
+        logger.info("CircuitBreaker [%s]: %s -> %s generacion=%s", self.name, previo.value, estado.value, self._generation)
+
+    def _evaluar_transicion_recuperacion(self):
+        if self._state == CircuitState.OPEN and time.monotonic() - self._last_state_change >= self.recovery_timeout:
+            self._transicion(CircuitState.HALF_OPEN)
+
     @property
-    def state(self) -> CircuitState:
+    def state(self):
         with self._lock:
             self._evaluar_transicion_recuperacion()
             return self._state
 
-    def get_state(self) -> str:
+    def get_state(self):
         return self.state.value
 
-    def get_stats(self) -> dict:
+    def get_stats(self):
         with self._lock:
             self._evaluar_transicion_recuperacion()
-            return {
-                "name": self.name,
-                "state": self._state.value,
-                "failure_count": self._failure_count,
-                "failure_threshold": self.failure_threshold,
-                "recovery_timeout": self.recovery_timeout,
-                "seconds_since_state_change": round(time.monotonic() - self._last_state_change, 2),
-            }
+            return {"name": self.name, "state": self._state.value, "failure_count": self._failure_count,
+                "failure_threshold": self.failure_threshold, "recovery_timeout": self.recovery_timeout,
+                "generation": self._generation, "probe_active": self._probe_active,
+                "rejected_calls": self._rejected_calls,
+                "seconds_since_state_change": round(time.monotonic() - self._last_state_change, 3)}
 
-    def reset(self) -> None:
+    def reset(self):
         with self._lock:
-            self._state = CircuitState.CLOSED
+            self._transicion(CircuitState.CLOSED)
             self._failure_count = 0
-            self._success_count = 0
-            self._last_state_change = time.monotonic()
-            logger.info("CircuitBreaker [%s] reseteado manualmente a CLOSED.", self.name)
 
-    def _evaluar_transicion_recuperacion(self) -> None:
-        """Evalúa si el circuito debe pasar de OPEN a HALF_OPEN tras expirar recovery_timeout."""
-        if self._state == CircuitState.OPEN:
-            elapsed = time.monotonic() - self._last_state_change
-            if elapsed >= self.recovery_timeout:
-                self._state = CircuitState.HALF_OPEN
-                self._success_count = 0
-                self._last_state_change = time.monotonic()
-                logger.info(
-                    "CircuitBreaker [%s]: Tiempo de recuperación expirado (%.2fs >= %.2fs). Transición a HALF_OPEN.",
-                    self.name,
-                    elapsed,
-                    self.recovery_timeout,
-                )
-
-    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def call(self, func: Callable[..., Any], *args, **kwargs):
         with self._lock:
             self._evaluar_transicion_recuperacion()
-
-            if self._state == CircuitState.OPEN:
-                logger.warning(
-                    "CircuitBreaker [%s] está OPEN. Rechazando llamada de inmediato (fail-fast).",
-                    self.name,
-                )
-                raise CircuitBreakerOpenError(
-                    f"El circuito hacia el servicio de Catálogo está abierto. El servicio no está disponible temporalmente. "
-                    f"Reintentos en pausa por {self.recovery_timeout}s."
-                )
-
-        # Ejecución fuera del lock para permitir concurrencia en llamadas
+            if self._state == CircuitState.OPEN or (self._state == CircuitState.HALF_OPEN and self._probe_active):
+                self._rejected_calls += 1
+                raise CircuitBreakerOpenError(f"Circuito {self.name}: abierto o sonda de recuperación ocupada")
+            generacion = self._generation
+            if self._state == CircuitState.HALF_OPEN:
+                self._probe_active = True
         try:
             resultado = func(*args, **kwargs)
-        except self.expected_exceptions as exc:
-            self._on_failure(exc)
+        except self.expected_exceptions:
+            with self._lock:
+                if generacion == self._generation:
+                    self._probe_active = False
+                    self._failure_count += 1
+                    if self._state == CircuitState.HALF_OPEN or self._failure_count >= self.failure_threshold:
+                        self._transicion(CircuitState.OPEN)
             raise
-
-        self._on_success()
-        return resultado
-
-    def _on_success(self) -> None:
+        except BaseException:
+            # Error de negocio/cancelación: no es evidencia de caída ni éxito remoto.
+            with self._lock:
+                if generacion == self._generation:
+                    self._probe_active = False
+            raise
         with self._lock:
-            if self._state == CircuitState.HALF_OPEN:
-                self._success_count += 1
-                if self._success_count >= self.half_open_success_threshold:
-                    self._state = CircuitState.CLOSED
+            if generacion == self._generation:
+                self._probe_active = False
+                if self._state == CircuitState.HALF_OPEN:
+                    self._success_count += 1
+                    if self._success_count >= self.half_open_success_threshold:
+                        self._transicion(CircuitState.CLOSED)
+                        self._failure_count = 0
+                elif self._state == CircuitState.CLOSED:
                     self._failure_count = 0
-                    self._success_count = 0
-                    self._last_state_change = time.monotonic()
-                    logger.info("CircuitBreaker [%s]: Prueba exitosa en HALF_OPEN. Circuito restablecido a CLOSED.", self.name)
-            elif self._state == CircuitState.CLOSED:
-                self._failure_count = 0
-
-    def _on_failure(self, exc: Exception) -> None:
-        with self._lock:
-            self._failure_count += 1
-            logger.warning(
-                "CircuitBreaker [%s]: Fallo registrado (%s). Fallos consecutivos: %d/%d.",
-                self.name,
-                exc,
-                self._failure_count,
-                self.failure_threshold,
-            )
-
-            if self._state == CircuitState.HALF_OPEN:
-                # Si falló en prueba, volver de inmediato a OPEN
-                self._state = CircuitState.OPEN
-                self._last_state_change = time.monotonic()
-                logger.warning("CircuitBreaker [%s]: Fallo en HALF_OPEN. Regresando a OPEN.", self.name)
-            elif self._state == CircuitState.CLOSED and self._failure_count >= self.failure_threshold:
-                self._state = CircuitState.OPEN
-                self._last_state_change = time.monotonic()
-                logger.error(
-                    "CircuitBreaker [%s]: Umbral de fallos alcanzado (%d/%d). Circuito ABIERTO.",
-                    self.name,
-                    self._failure_count,
-                    self.failure_threshold,
-                )
+        return resultado

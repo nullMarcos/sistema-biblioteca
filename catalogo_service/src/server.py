@@ -6,7 +6,10 @@ del servicio de Catalogo de la biblioteca.
 import os
 import sys
 import logging
+import sqlite3
+import re
 import grpc
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 PROTOS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "protos"))
@@ -15,119 +18,104 @@ if PROTOS_DIR not in sys.path:
 
 import catalogo_pb2
 import catalogo_pb2_grpc
-from src.database import SessionLocal
-from src.models import Libro, Ejemplar
+from src.database import SessionLocal, iniciar_escritura
+from src.models import Libro, Ejemplar, ReservaOperacion
+from src import reservas
 
 logger = logging.getLogger(__name__)
+
+
+def error_sqlite(context, exc):
+    codigo = getattr(exc.orig, "sqlite_errorcode", 0) & 255
+    if codigo in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        context.set_code(grpc.StatusCode.UNAVAILABLE)
+        context.set_details("SQLITE_BUSY: espera acotada por el escritor de Catálogo")
+    else:
+        context.set_code(grpc.StatusCode.INTERNAL)
+        context.set_details("Error de persistencia en Catálogo")
+
+
+def validar_id(identificador, context):
+    if identificador <= 0:
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "El identificador debe ser positivo")
+
+
+def validar_operacion(identificador, context):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", identificador):
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Identidad de operación obligatoria e inválida")
 
 
 class CatalogoServicer(catalogo_pb2_grpc.CatalogoServicer):
     """Servidor gRPC que maneja el inventario de libros y reserva/liberacion de ejemplares."""
 
-    def ReservarEjemplar(self, request, context):
-        """
-        Reserva un ejemplar disponible de un libro especifico.
-        Transaccion atomica: busca la primera copia con estado DISPONIBLE y la marca como PRESTADO.
-        """
+    def _escritura(self, request, context, respuesta, accion):
         session: Session = SessionLocal()
         try:
-            libro = session.get(Libro, request.libro_id)
-            if libro is None:
+            iniciar_escritura(session)
+            resultado = accion(session, request)
+            session.commit()
+            if resultado.estado == "NO_ENCONTRADO":
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details("Libro no encontrado")
-                return catalogo_pb2.ReservaResponse()
-
-            ejemplar = (
-                session.query(Ejemplar)
-                .filter(Ejemplar.libro_id == request.libro_id, Ejemplar.estado == "DISPONIBLE")
-                .with_for_update()
-                .first()
-            )
-
-            if not ejemplar:
-                logger.warning(f"No hay ejemplares disponibles para el libro_id={request.libro_id}")
-                return catalogo_pb2.ReservaResponse(
-                    ejemplar_id=0,
-                    exito=False,
-                    motivo="No hay ejemplares disponibles para el libro solicitado."
-                )
-
-            ejemplar.estado = "PRESTADO"
-            session.commit()
-
-            logger.info(f"Ejemplar reservado exitosamente: ejemplar_id={ejemplar.id} para libro_id={request.libro_id}")
-            return catalogo_pb2.ReservaResponse(
-                ejemplar_id=ejemplar.id,
-                exito=True,
-                motivo=""
-            )
-        except Exception as e:
+            return resultado
+        except reservas.ErrorOperacion as e:
             session.rollback()
-            logger.error(f"Error inesperado al reservar ejemplar para libro_id={request.libro_id}: {e}")
+            context.set_code(e.codigo)
+            context.set_details(str(e))
+            return respuesta()
+        except OperationalError as e:
+            session.rollback()
+            error_sqlite(context, e)
+            return respuesta()
+        except Exception:
+            session.rollback()
+            logger.exception("Error al persistir operación de Catálogo")
             context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details("Error interno al procesar la reserva")
-            return catalogo_pb2.ReservaResponse()
+            context.set_details("Error interno al persistir la operación")
+            return respuesta()
         finally:
             session.close()
+
+    def ReservarEjemplar(self, request, context):
+        validar_id(request.libro_id, context)
+        validar_operacion(request.operacion_id, context)
+        return self._escritura(request, context, catalogo_pb2.ReservaResponse, reservas.reservar)
 
     def LiberarEjemplar(self, request, context):
-        """
-        Libera un ejemplar previamente prestado, cambiándolo de PRESTADO a DISPONIBLE.
-        """
-        session: Session = SessionLocal()
-        try:
-            ejemplar = (
-                session.query(Ejemplar)
-                .filter(Ejemplar.id == request.ejemplar_id)
-                .with_for_update()
-                .first()
-            )
+        validar_id(request.ejemplar_id, context)
+        validar_operacion(request.operacion_id, context)
+        validar_operacion(request.reserva_id, context)
+        return self._escritura(request, context, catalogo_pb2.LiberarResponse, reservas.liberar)
 
-            if not ejemplar:
-                logger.warning(f"Intento de liberar un ejemplar inexistente: ejemplar_id={request.ejemplar_id}")
-                return catalogo_pb2.LiberarResponse(
-                    exito=False,
-                    motivo="El ejemplar solicitado no existe."
-                )
+    def CancelarReserva(self, request, context):
+        validar_id(request.libro_id, context)
+        validar_operacion(request.operacion_id, context)
+        validar_operacion(request.reserva_id, context)
+        return self._escritura(request, context, catalogo_pb2.LiberarResponse,
+            lambda db, req: reservas.liberar(db, req, cancelar=True))
 
-            if ejemplar.estado == "DISPONIBLE":
-                logger.warning(f"El ejemplar_id={request.ejemplar_id} ya se encontraba DISPONIBLE")
-                return catalogo_pb2.LiberarResponse(
-                    exito=False,
-                    motivo="El ejemplar ya se encuentra disponible."
-                )
-
-            ejemplar.estado = "DISPONIBLE"
-            session.commit()
-
-            logger.info(f"Ejemplar liberado exitosamente: ejemplar_id={request.ejemplar_id}")
-            return catalogo_pb2.LiberarResponse(
-                exito=True,
-                motivo=""
-            )
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Error inesperado al liberar ejemplar_id={request.ejemplar_id}: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details("Error interno al procesar la liberación")
-            return catalogo_pb2.LiberarResponse()
-        finally:
-            session.close()
+    def ConsultarOperacion(self, request, context):
+        validar_operacion(request.operacion_id, context)
+        with SessionLocal() as session:
+            registro = session.get(ReservaOperacion, request.operacion_id)
+            if registro is None:
+                context.set_code(grpc.StatusCode.NOT_FOUND)
+                context.set_details("Operación no encontrada")
+                return catalogo_pb2.ReservaResponse()
+            return reservas.respuesta(registro)
 
     def ConsultarDisponibilidad(self, request, context):
         """
         Consulta la cantidad total de ejemplares y la cantidad disponible para un libro.
         """
+        validar_id(request.libro_id, context)
         session: Session = SessionLocal()
         try:
             libro = session.query(Libro).filter(Libro.id == request.libro_id).first()
             if not libro:
-                return catalogo_pb2.ConsultaResponse(
-                    libro_id=request.libro_id,
-                    ejemplares_disponibles=0,
-                    total_ejemplares=0,
-                    titulo=""
-                )
+                context.set_code(grpc.StatusCode.NOT_FOUND)
+                context.set_details("Libro no encontrado")
+                return catalogo_pb2.ConsultaResponse()
 
             total = len(libro.ejemplares)
             disponibles = sum(1 for e in libro.ejemplares if e.estado == "DISPONIBLE")
@@ -189,6 +177,7 @@ class CatalogoServicer(catalogo_pb2_grpc.CatalogoServicer):
         """
         Obtiene la informacion detallada de un libro especifico por su ID.
         """
+        validar_id(request.libro_id, context)
         session: Session = SessionLocal()
         try:
             libro = session.query(Libro).filter(Libro.id == request.libro_id).first()

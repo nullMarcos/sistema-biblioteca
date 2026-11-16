@@ -1,4 +1,5 @@
-fastapi
-uvicorn[standard]
-httpx
-pyjwt
+-c ../requirements/constraints.txt
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+PyJWT==2.15.1

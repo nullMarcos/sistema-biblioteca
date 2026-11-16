@@ -1,15 +1,59 @@
 import os
 import time
+import math
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 
 import httpx
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from collections import defaultdict, deque
 
-app = FastAPI(title="API Gateway Biblioteca")
+logger = logging.getLogger("gateway")
+
+class ErrorResponse(BaseModel):
+    codigo: str
+    mensaje: str
+
+
+@asynccontextmanager
+async def lifespan(app):
+    global client
+    client = httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT, trust_env=False)
+    try:
+        yield
+    finally:
+        await client.aclose()
+
+
+app = FastAPI(title="API Gateway Biblioteca", description="Entrada pública: JWT, limitación de tasa y proxy REST /api/v1.",
+    lifespan=lifespan,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse},
+        "default": {"model": ErrorResponse}})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    codigos = {400: "SOLICITUD_INVALIDA", 401: "NO_AUTORIZADO", 403: "PROHIBIDO", 404: "NO_ENCONTRADO", 429: "LIMITE_EXCEDIDO"}
+    return JSONResponse(status_code=exc.status_code, headers=exc.headers,
+        content={"codigo": codigos.get(exc.status_code, "ERROR_HTTP"), "mensaje": str(exc.detail)})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=400, content={"codigo": "ERROR_VALIDACION", "mensaje": "Formato de solicitud inválido"})
+
+
+@app.exception_handler(Exception)
+async def error_inesperado_handler(request: Request, exc: Exception):
+    logger.error("Error no controlado en %s", request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"codigo": "ERROR_INTERNO", "mensaje": "Error interno del servicio"})
 
 # --- Configuracion ---
 PRESTAMOS_URL = os.getenv("PRESTAMOS_URL", "http://prestamos:8000")
@@ -19,6 +63,10 @@ JWT_ALGORITMO = "HS256"
 JWT_DURACION_SEG = 3600
 LIMITE_PETICIONES = int(os.getenv("RATE_LIMIT", "20"))
 VENTANA_SEG = int(os.getenv("RATE_WINDOW", "60"))
+UPSTREAM_TIMEOUT = float(os.getenv("GATEWAY_TIMEOUT_SEGS", "10"))
+SAGA_TIMEOUT = float(os.getenv("SAGA_TIMEOUT_SEGS", "8"))
+if not math.isfinite(UPSTREAM_TIMEOUT) or not math.isfinite(SAGA_TIMEOUT) or SAGA_TIMEOUT <= 0 or UPSTREAM_TIMEOUT <= SAGA_TIMEOUT + 1:
+    raise RuntimeError("GATEWAY_TIMEOUT_SEGS debe superar SAGA_TIMEOUT_SEGS más 1 s de margen")
 
 peticiones_por_ip = defaultdict(deque)
 
@@ -32,7 +80,7 @@ USUARIOS = {
     "socio1": {"password": "socio123", "id":"2", "role":"socio"},
 }
 
-client = httpx.AsyncClient(timeout=5.0)
+client = None
 bearer = HTTPBearer(auto_error=False)
 
 # --- Autenticacion ---
@@ -77,7 +125,10 @@ def autenticar(cred: HTTPAuthorizationCredentials | None = Depends(bearer)) -> d
     if cred is None:
         raise HTTPException(status_code=401, detail="Token ausente")
     try:
-        return jwt.decode(cred.credentials, JWT_SECRET, algorithms=[JWT_ALGORITMO])
+        claims = jwt.decode(cred.credentials, JWT_SECRET, algorithms=[JWT_ALGORITMO], options={"require": ["sub", "role", "iat", "exp"]})
+        if not claims["sub"] or len(claims["sub"]) > 128 or not isinstance(claims["role"], str) or claims["role"] not in {"admin", "socio"}:
+            raise jwt.InvalidTokenError("Claims de identidad inválidos")
+        return claims
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError:
@@ -94,7 +145,7 @@ async def proxy(recurso: str, request: Request, path: str="", usuario: dict = De
 
     base = RUTAS.get(recurso)
     if base is None:
-        return JSONResponse({"detail": "Recurso no encontrado"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Recurso no encontrado")
 
     destino = f"{base}/v1/{recurso}"
     if path:
@@ -112,15 +163,20 @@ async def proxy(recurso: str, request: Request, path: str="", usuario: dict = De
     cuerpo = await request.body()
 
     try:
-        r = await client.request(
-            request.method,
-            destino,
-            params=request.query_params,
-            headers=headers,
-            content=cuerpo,
-        )
+        async with asyncio.timeout(UPSTREAM_TIMEOUT):
+            r = await client.request(
+                request.method,
+                destino,
+                params=request.query_params,
+                headers=headers,
+                content=cuerpo,
+            )
+    except (TimeoutError, httpx.TimeoutException):
+        return JSONResponse({"codigo": "UPSTREAM_TIMEOUT", "mensaje": "Tiempo de espera del servicio agotado; consulte la misma clave si era una escritura"}, status_code=504)
+    except httpx.ConnectError:
+        return JSONResponse({"codigo": "UPSTREAM_NO_DISPONIBLE", "mensaje": "Servicio no disponible"}, status_code=503)
     except httpx.RequestError:
-        return JSONResponse({"detail": "Servicio no disponible"}, status_code=502)
+        return JSONResponse({"codigo": "UPSTREAM_RESPUESTA_INVALIDA", "mensaje": "Respuesta o comunicación remota inválida"}, status_code=502)
 
     return Response(
         content=r.content,

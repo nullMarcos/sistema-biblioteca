@@ -1,7 +1,7 @@
 """
 Script para inicializar la base de datos de catalogo_service con datos de prueba.
 Crea libros representativos de los géneros del modelo y sus respectivos ejemplares
-(en estados DISPONIBLE y PRESTADO).
+(inicialmente disponibles; los préstamos se crean mediante la Saga).
 """
 
 import sys
@@ -9,6 +9,7 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 # Permitir ejecución tanto directa como modular
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -16,8 +17,8 @@ PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.database import Base, engine, SessionLocal
-from src.models import Libro, Ejemplar
+from src.database import Base, SessionLocal, migrar_esquema
+from src.models import Libro, Ejemplar, ReservaOperacion, LiberacionOperacion
 
 # Datos iniciales con cobertura de todos los géneros especificados en Libro:
 # ACCION, COMEDIA, DRAMA, SCI-FI, FILOSOFIA, TERROR, MANGA, COCINA, LITERATURA
@@ -27,7 +28,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Dune",
         "autor": "Frank Herbert",
         "genero": "SCI-FI",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Fundación",
@@ -39,13 +40,13 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Neuromante",
         "autor": "William Gibson",
         "genero": "SCI-FI",
-        "ejemplares": ["PRESTADO"],  # Libro sin copias disponibles inmediatamente
+        "ejemplares": ["DISPONIBLE"],
     },
     {
         "titulo": "Fahrenheit 451",
         "autor": "Ray Bradbury",
         "genero": "SCI-FI",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
 
     # LITERATURA
@@ -53,7 +54,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Cien años de soledad",
         "autor": "Gabriel García Márquez",
         "genero": "LITERATURA",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Don Quijote de la Mancha",
@@ -65,7 +66,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Ficciones",
         "autor": "Jorge Luis Borges",
         "genero": "LITERATURA",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Rayuela",
@@ -79,7 +80,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Meditaciones",
         "autor": "Marco Aurelio",
         "genero": "FILOSOFIA",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Así habló Zaratustra",
@@ -91,7 +92,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "La República",
         "autor": "Platón",
         "genero": "FILOSOFIA",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "El mito de Sísifo",
@@ -105,7 +106,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "El resplandor",
         "autor": "Stephen King",
         "genero": "TERROR",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Drácula",
@@ -117,7 +118,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "La llamada de Cthulhu",
         "autor": "H.P. Lovecraft",
         "genero": "TERROR",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
 
     # MANGA
@@ -125,7 +126,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Berserk Vol. 1",
         "autor": "Kentaro Miura",
         "genero": "MANGA",
-        "ejemplares": ["DISPONIBLE", "PRESTADO", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Death Note Vol. 1",
@@ -145,7 +146,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "El código Da Vinci",
         "autor": "Dan Brown",
         "genero": "ACCION",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Los juegos del hambre",
@@ -157,7 +158,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "El ultimátum de Bourne",
         "autor": "Robert Ludlum",
         "genero": "ACCION",
-        "ejemplares": ["PRESTADO"],
+        "ejemplares": ["DISPONIBLE"],
     },
 
     # COMEDIA
@@ -165,7 +166,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Guía del autoestopista galáctico",
         "autor": "Douglas Adams",
         "genero": "COMEDIA",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "Buenos presagios",
@@ -185,7 +186,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Crimen y castigo",
         "autor": "Fiódor Dostoyevski",
         "genero": "DRAMA",
-        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE", "DISPONIBLE"],
     },
     {
         "titulo": "El gran Gatsby",
@@ -197,7 +198,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Bodas de sangre",
         "autor": "Federico García Lorca",
         "genero": "DRAMA",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
 
     # COCINA
@@ -211,7 +212,7 @@ LIBROS_SEMILLA: List[Dict[str, Any]] = [
         "titulo": "Cocina fácil para todos",
         "autor": "Karlos Arguiñano",
         "genero": "COCINA",
-        "ejemplares": ["DISPONIBLE", "PRESTADO"],
+        "ejemplares": ["DISPONIBLE", "DISPONIBLE"],
     },
 ]
 
@@ -221,7 +222,7 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
     Puebla la base de datos con los libros y ejemplares iniciales.
 
     :param session: Sesión de SQLAlchemy opcional. Si no se provee, se crea una nueva.
-    :param reset: Si es True, elimina los registros existentes antes de insertar.
+    :param reset: Compatibilidad CLI; solo se acepta sobre una base vacía.
     :return: Diccionario con el conteo de libros y ejemplares creados.
     """
     should_close = False
@@ -230,19 +231,15 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
         should_close = True
 
     try:
-        # Asegurar que las tablas existan
-        Base.metadata.create_all(bind=engine)
-
-        if reset:
-            session.query(Ejemplar).delete()
-            session.query(Libro).delete()
-            session.commit()
-            print("ℹ️  Tablas 'ejemplares' y 'libros' limpiadas exitosamente.")
-        else:
-            existing_count = session.query(Libro).count()
-            if existing_count > 0:
-                print(f"⚠️  La base de datos ya contiene {existing_count} libros. Usa reset=True o el flag --reset para recargar.")
-                return {"libros": 0, "ejemplares": 0}
+        Base.metadata.create_all(bind=session.get_bind())
+        if session.new or session.dirty or session.deleted:
+            raise ValueError("La semilla requiere una sesión sin cambios pendientes")
+        session.execute(text("BEGIN IMMEDIATE"))
+        if any(session.query(modelo).first() is not None for modelo in (Libro, Ejemplar, ReservaOperacion, LiberacionOperacion)):
+            if reset:
+                raise ValueError("No se reinicializa una base poblada; use una base desechable nueva")
+            session.rollback()
+            return {"libros": 0, "ejemplares": 0}
 
         total_libros = 0
         total_ejemplares = 0
@@ -276,9 +273,10 @@ def seed_database(session: Optional[Session] = None, reset: bool = False) -> Dic
 
 def main():
     parser = argparse.ArgumentParser(description="Poblar la base de datos de catalogo_service con datos iniciales.")
-    parser.add_argument("--reset", action="store_true", help="Elimina los datos existentes antes de poblar.")
+    parser.add_argument("--reset", action="store_true", help="Solo se acepta si la base está vacía.")
     args = parser.parse_args()
 
+    migrar_esquema()
     seed_database(reset=args.reset)
 
 

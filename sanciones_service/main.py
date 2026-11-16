@@ -9,6 +9,7 @@ import uvicorn
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import text, or_
 from sqlalchemy.orm import Session
 
@@ -48,11 +49,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API de Sanciones - Red de Bibliotecas",
-    description="Microservicio de verificación de sanciones, multas y bloqueos de socios con módulo de inyección de caos",
+    description="API REST interna de sanciones. No se publica por Gateway. Correlación por RUT; controles de caos solo en la red interna.",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
     openapi_url="/openapi.json",
+    responses={400: {"model": ErrorResponse}, "default": {"model": ErrorResponse}},
 )
 
 
@@ -94,8 +96,8 @@ async def chaos_middleware(request: Request, call_next):
 
 
 # --- MANEJADORES GLOBALES DE EXCEPCIONES ---
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Estandariza los errores HTTP al formato {"codigo": ..., "mensaje": ...}."""
     if isinstance(exc.detail, dict) and "codigo" in exc.detail and "mensaje" in exc.detail:
         return JSONResponse(status_code=exc.status_code, content=exc.detail, headers=exc.headers)
@@ -132,8 +134,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.exception_handler(Exception)
+async def error_inesperado_handler(request: Request, exc: Exception):
+    logger.error("Error no controlado en %s", request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"codigo": "ERROR_INTERNO", "mensaje": "Error interno del servicio"})
+
+
 # --- RUTAS DE CONTROL DE CAOS ---
-@app.api_route("/chaos/delay", methods=["GET", "POST"], tags=["Caos"])
+@app.post("/chaos/delay", tags=["Caos"])
+@app.get("/chaos/delay", tags=["Caos"], deprecated=True)
 def set_chaos_delay(seconds: float = Query(..., ge=0.0, description="Segundos de latencia artificial a inducir")):
     """Configura latencia artificial en llamadas al servicio de Sanciones."""
     chaos_config["delay_seconds"] = float(seconds)
@@ -141,7 +150,8 @@ def set_chaos_delay(seconds: float = Query(..., ge=0.0, description="Segundos de
     return {"mensaje": f"Latencia de {seconds}s configurada", "caos": chaos_config}
 
 
-@app.api_route("/chaos/fault", methods=["GET", "POST"], tags=["Caos"])
+@app.post("/chaos/fault", tags=["Caos"])
+@app.get("/chaos/fault", tags=["Caos"], deprecated=True)
 def set_chaos_fault(status: int = Query(500, description="Código de estado HTTP de falla a retornar (ej. 500)")):
     """Configura una falla HTTP forzada (ej. 500) en llamadas al servicio."""
     chaos_config["fault_status"] = int(status)
@@ -149,7 +159,8 @@ def set_chaos_fault(status: int = Query(500, description="Código de estado HTTP
     return {"mensaje": f"Falla HTTP {status} configurada", "caos": chaos_config}
 
 
-@app.api_route("/chaos/reset", methods=["GET", "POST"], tags=["Caos"])
+@app.post("/chaos/reset", tags=["Caos"])
+@app.get("/chaos/reset", tags=["Caos"], deprecated=True)
 def reset_chaos():
     """Restaura el comportamiento normal del servicio, eliminando retardos y fallas forzadas."""
     chaos_config["delay_seconds"] = 0.0
