@@ -4,7 +4,7 @@
 set -o pipefail
 
 # Ruta base de la API gateway
-BASE="http://localhost:8080"
+BASE="${BASE_URL:-http://localhost:${GATEWAY_PORT:-8080}}"
 # Directorio del reporte
 DIR_REPORTE="scripts"
 # Ruta del archivo

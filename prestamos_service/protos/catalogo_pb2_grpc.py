@@ -88,7 +88,7 @@ class CatalogoServicer:
         raise NotImplementedError('Method not implemented!')
 
     def ListarCatalogo(self, request, context):
-        """RPCs adicionales para gestion completa del catalogo (Integrante 3)
+        """RPCs adicionales para gestion completa del catalogo
         Lista los libros del catalogo con soporte para filtros opcionales.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)

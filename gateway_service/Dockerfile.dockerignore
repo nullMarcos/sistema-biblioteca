@@ -1,0 +1,6 @@
+**
+!requirements/
+!requirements/constraints.txt
+!gateway_service/
+!gateway_service/requirements.txt
+!gateway_service/main.py

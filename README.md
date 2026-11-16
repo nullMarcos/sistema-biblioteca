@@ -13,24 +13,25 @@ Sistema distribuido de gestión de biblioteca basado en una arquitectura desacop
 
 La solución está compuesta por tres servicios autónomos con persistencia independiente y comunicación distribuida:
 
-- **`prestamos_service` (API REST Pública)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Expone las rutas de negocio externas (`/v1/socios` y `/v1/prestamos`), implementa autenticación estricta basada en cabeceras `X-API-Key`, gestiona su propia base de datos SQLite (`prestamos.db`), incorpora hipermedios dinámicos (**HATEOAS**) para navegación de estado de préstamos, y actúa como cliente gRPC de Catálogo integrando patrones avanzados de resiliencia (**Circuit Breaker** y **reintentos con backoff exponencial**), estandarización integral de errores según el contrato OpenAPI (`{codigo, mensaje}`) y chequeo de salud dependiente (`/health`).
+- **`prestamos_service` (API REST interna)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Atiende las rutas internas `/v1/socios` y `/v1/prestamos`, protegidas con `X-API-Key`; Gateway las publica con JWT bajo `/api/v1`. Gestiona su propia base SQLite (`prestamos.db`), incorpora HATEOAS y consume Catálogo mediante gRPC con Circuit Breaker y reintentos. Conserva errores `{codigo, mensaje}` y un `/health` interno que informa sus dependencias.
 - **`catalogo_service` (Microservicio Interno gRPC)**: Desarrollado sobre el runtime oficial de **gRPC** en Python y **SQLAlchemy 2.0**. Administra el catálogo de libros y el inventario de ejemplares en una base de datos SQLite aislada (`catalogo.db`). Proporciona procedimientos RPC para consulta de disponibilidad, listado con filtros (género y disponibilidad), y reserva (`ReservarEjemplar`) y liberación (`LiberarEjemplar`) atómicas protegidas mediante **bloqueo pesimista** (`with_for_update`) para prevenir sobreventa y condiciones de carrera concurrentes, además de apagado ordenado (*graceful shutdown*).
 - **`sanciones_service` (Microservicio REST de Verificación y Resiliencia)**: Desarrollado con **FastAPI** y **SQLAlchemy 2.0**. Administra bloqueos activos y multas pendientes en una base de datos SQLite propia (`sanciones.db`). Implementa un **Módulo de Inyección de Caos** en vivo (`/chaos/delay` y `/chaos/fault`) para inducir latencia y caídas controladas, e incorpora una suite de resiliencia en su cliente consumidor: **Timeout estricto de 1.5s**, **Circuit Breaker** de 3 estados con *fail-fast*, **Bulkhead** de concurrencia acotada a 5 llamadas simultáneas y **Fallback elegante** con degradación a `ESTADO: EN_REVISION_MANUAL`.
 
 ## Arquitectura
 
-- **`prestamos_service`**: FastAPI/REST en el puerto interno `8000` (mapeado al host `8000:8000`), protegido con API Key; persistencia propia en `prestamos.db`.
+- **`gateway_service`**: única entrada publicada, por defecto `http://localhost:8080`. Autentica mediante JWT, limita peticiones y enruta `/api/v1/socios` y `/api/v1/prestamos`.
+- **`prestamos_service`**: FastAPI/REST en `prestamos:8000`, accesible dentro de Compose y protegido con API Key; persistencia propia en `prestamos.db`.
 - **`catalogo_service`**: Servidor gRPC en el puerto `50051`; persistencia propia en `catalogo.db`.
-- **`sanciones_service`**: FastAPI/REST en el puerto interno `8000` (mapeado al host `8001:8000` para desarrollo local); persistencia propia en `sanciones.db`.
+- **`sanciones_service`**: FastAPI/REST en `sanciones:8000`, sin puerto publicado al host; persistencia propia en `sanciones.db`.
 - **Patrón Database-per-Service**: Cada microservicio administra su propio almacenamiento SQLite de forma exclusiva (3 bases de datos independientes: `prestamos.db`, `catalogo.db`, `sanciones.db` montadas en volúmenes Docker). No existen llaves foráneas directas (`ForeignKey`) ni cruces entre bases de datos; la correlación se efectúa mediante identificadores lógicos (`libro_id`, `ejemplar_id`) y una clave natural de negocio compartida (**`rut`**) para la identidad de socios sin acoplar secuencias numéricas.
-- **Comunicación y Red**: Todos los servicios conviven dentro de la red aislada de Docker Compose (`biblioteca_net`). Las operaciones entre Préstamos y Catálogo se realizan síncronamente vía gRPC sobre HTTP/2 con Protocol Buffers v3, mientras que la verificación de Sanciones se realiza vía HTTP REST con patrones de resiliencia.
+- **Comunicación y Red**: Compose crea `<proyecto>_biblioteca_net` y nombres de contenedor propios del proyecto. Préstamos consume `catalogo:50051` mediante gRPC y `sanciones:8000` mediante HTTP REST. Las tres bases usan volúmenes independientes con prefijo del proyecto.
 
 ## Estructura del repositorio
 
 ```text
 sistema-biblioteca/
 ├── docker-compose.yml              # Orquestación de servicios, puertos, red y volúmenes
-├── .env.example                    # Plantilla de variables de entorno (API_KEY)
+├── .env.example                    # Plantilla de API_KEY, JWT_SECRET y GATEWAY_PORT
 ├── README.md                       # Documentación principal, ejecución y pruebas
 ├── contracts/                      # Contratos compartidos entre consumidores y servicios
 │   ├── openapi.yaml                # Especificación formal de la API REST (OpenAPI 3.0.4)
@@ -57,7 +58,7 @@ sistema-biblioteca/
 │       ├── models.py                # Modelos ORM Libro y Ejemplar (con índices)
 │       ├── seed.py                  # Carga de datos semilla de libros y ejemplares
 │       └── server.py                # Implementación de RPCs del servicio Catalogo
-├── prestamos_service/               # API pública REST de socios y préstamos
+├── prestamos_service/               # API REST interna de socios y préstamos
 │   ├── Dockerfile                   # Imagen Docker optimizada para Python/Uvicorn
 │   ├── requirements.txt             # Dependencias (FastAPI, Uvicorn, SQLAlchemy, gRPC)
 │   ├── main.py                      # Aplicación FastAPI, lifespan, handlers y health check
@@ -101,13 +102,19 @@ cd sistema-biblioteca
 
 ## Ejecución con Docker Compose
 
-Desde la raíz del repositorio, se puede revisar la configuración resuelta y levantar ambos servicios:
+Desde la raíz del repositorio, se puede revisar la configuración resuelta y levantar los cuatro servicios:
 
 ```bash
 docker compose config
-docker compose up --build
+docker compose up --build -d --wait
 ```
-Compose construye y levanta los tres servicios (`catalogo`, `prestamos` y `sanciones`); en el primer inicio las bases de datos SQLite se crean y se cargan automáticamente los datos semilla de prueba. Los volúmenes Docker (`catalogo_data`, `prestamos_data`, `sanciones_data`) conservan los datos entre reinicios.
+Compose construye Catálogo, Préstamos, Sanciones y Gateway. En el primer inicio las bases SQLite se crean y cargan sus semillas. Los volúmenes conservan datos entre reinicios. El único binding al host es `${GATEWAY_PORT:-8080}:8080`; se puede configurar en `.env` junto con `API_KEY` y `JWT_SECRET` (ver `.env.example`).
+
+Los builds se ejecutan desde la raíz con `docker compose build`, no desde la carpeta individual de cada servicio. Los archivos `Dockerfile.dockerignore` limitan cada contexto al código de ese servicio y sus entradas de build: no incluyen `.env`, BD, pruebas ni stubs preexistentes. Las imágenes base fijan parche y digest multi-arquitectura, y `requirements/constraints.txt` fija las dependencias transitivas. Se conservan Python 3.14 para los servicios de dominio y 3.12 para Gateway.
+
+Los healthchecks de Compose comprueban disponibilidad del servidor. En Préstamos se consulta `/openapi.json` como liveness; `/health` mantiene su diagnóstico de dependencias y puede indicar degradación. Préstamos espera a Catálogo, pero puede arrancar sin Sanciones. `docker compose up --wait` del proyecto completo sí espera la salud de los cuatro contenedores.
+
+Para dos instalaciones independientes, usar nombres de proyecto y puertos distintos, por ejemplo `GATEWAY_PORT=8081 docker compose -p biblioteca-otra up --build -d --wait`. No se renombran ni borran automáticamente volúmenes existentes.
 
 Para detener los servicios conservando los datos:
 
@@ -125,52 +132,39 @@ docker compose down -v
 
 ## Autenticación
 
-Las rutas de socios y préstamos en `prestamos_service` requieren el header **`X-API-Key`**. En `docker-compose.yml` está configurada la clave de desarrollo `biblioteca_dev_key_2026`, usada cuando `API_KEY` no está definida. Puedes cambiarla creando `.env` desde `.env.example` y asignando tu valor:
+El cliente externo obtiene un JWT en `POST /auth/login` de Gateway y lo envía como `Authorization: Bearer TOKEN`. Las cuentas de demostración existentes son `admin/admin123` y `socio1/socio123`. Gateway usa `X-API-Key` como credencial interna hacia Préstamos. En Compose, `API_KEY` usa `biblioteca_dev_key_2026` como valor de desarrollo si no está definida. Puedes configurar los valores creando `.env` desde `.env.example`:
 
 ```bash
 cp .env.example .env
-# Editar API_KEY en .env
+# Editar API_KEY, JWT_SECRET y GATEWAY_PORT en .env
 ```
 
-La clave incluida en Compose es solo para desarrollo/evaluación; no es una credencial segura para producción. `/docs`, `/openapi.json` y `/health` de ambos servicios, así como las rutas internas de `sanciones_service` se pueden consultar sin clave; las operaciones protegidas invocadas desde Swagger de préstamos requieren autorizarse con la clave.
+Las claves por defecto y las cuentas anteriores son de demostración. Los endpoints de diagnóstico y caos de los servicios internos se consultan dentro de la red Compose; no tienen un binding público propio.
 
 ## URLs del Sistema
 
 | Servicio / Recurso | Dirección | Autenticación | Descripción |
 |---|---|---|---|
-| **Swagger UI (Préstamos)** | <http://localhost:8000/docs> | Pública (endpoints protegidos requieren API Key) | Documentación interactiva de Préstamos y Socios |
-| **OpenAPI JSON (Préstamos)** | <http://localhost:8000/openapi.json> | Pública | Especificación OpenAPI de Préstamos |
-| **Health Check (Préstamos)** | <http://localhost:8000/health> | Pública | Chequeo de salud dependiente (BD, gRPC y Circuit Breaker) |
-| **Socios** | <http://localhost:8000/v1/socios> | `X-API-Key` | CRUD y listado de socios con filtro por RUT |
-| **Préstamos** | <http://localhost:8000/v1/prestamos> | `X-API-Key` | Registro, listado y devolución con HATEOAS |
-| **Catálogo gRPC** | `localhost:50051` | gRPC interno | Procedimientos RPC de inventario y reservas |
-| **Swagger UI (Sanciones)** | <http://localhost:8001/docs> | Pública | Documentación interactiva de Sanciones y Caos |
-| **OpenAPI JSON (Sanciones)** | <http://localhost:8001/openapi.json> | Pública | Especificación OpenAPI de Sanciones |
-| **Health Check (Sanciones)** | <http://localhost:8001/health> | Pública | Chequeo de salud de base de datos de Sanciones |
-| **Consultar Sanciones Socio** | <http://localhost:8001/v1/sanciones/socios/{id_o_rut}> | Pública | Verificación de bloqueos activos y multas por RUT o ID |
-| **Listar Sanciones** | <http://localhost:8001/v1/sanciones/socios> | Pública | Listado de estado de sanciones (con filtro opcional `?rut=`) |
-| **Módulo de Caos: Latencia** | <http://localhost:8001/chaos/delay?seconds=X> | Pública | Inducción de retardo artificial en llamadas |
-| **Módulo de Caos: Fallas** | <http://localhost:8001/chaos/fault?status=500> | Pública | Inducción de error HTTP forzado |
-| **Módulo de Caos: Reset** | <http://localhost:8001/chaos/reset> | Pública | Restablece el servicio a la normalidad |
-| **Módulo de Caos: Estado** | <http://localhost:8001/chaos/status> | Pública | Consulta métricas del módulo de caos |
+| **Health Gateway** | <http://localhost:8080/health> | Pública | Liveness del Gateway |
+| **Login** | <http://localhost:8080/auth/login> | Credenciales de demostración | POST que entrega JWT |
+| **Swagger Gateway** | <http://localhost:8080/docs> | Página pública | Contrato del proxy y login |
+| **Socios** | <http://localhost:8080/api/v1/socios> | JWT | CRUD y listado con filtro por RUT |
+| **Préstamos** | <http://localhost:8080/api/v1/prestamos> | JWT | Registro, listado y devolución con HATEOAS |
+
+Las URLs anteriores usan el puerto por defecto; sustituirlo por `GATEWAY_PORT` cuando corresponda. Catálogo, Préstamos y Sanciones solo se acceden por DNS interno. Para un diagnóstico HTTP interno, por ejemplo:
+
+```bash
+docker compose exec -T sanciones python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health', timeout=3).read().decode())"
+```
 ### Cómo probar los endpoints protegidos
 
-- **Desde Swagger UI**:
-  1. Abrir http://localhost:8000/docs en el navegador.
-  2. Hacer clic en el botón verde **Authorize** (arriba a la derecha)
-  3. Ingresar la clave de desarrollo `biblioteca_dev_key_2026` (o la definida en `.env`).
-  4. Probar cualquier endpoint con el botón **Try it out**.
+Desde la terminal, obtener el token y consultar socios:
 
-- **Desde la terminal**:
-
-  - **Linux / macOS**:
-    ```bash
-    curl -H "X-API-Key: biblioteca_dev_key_2026" http://localhost:8000/v1/socios
-    ```
-  - **Windows (PowerShell)**:
-    ```powershell
-    curl.exe -H "X-API-Key: biblioteca_dev_key_2026" http://localhost:8000/v1/socios
-    ```
+```bash
+curl -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}' http://localhost:8080/auth/login
+# Copiar el access_token obtenido en la siguiente solicitud.
+curl -H "Authorization: Bearer TOKEN" http://localhost:8080/api/v1/socios
+```
 ---
 
 ## Contratos
@@ -178,21 +172,38 @@ La clave incluida en Compose es solo para desarrollo/evaluación; no es una cred
 - [`contracts/openapi.yaml`](contracts/openapi.yaml): contrato OpenAPI 3.0.4 de REST, rutas `/v1`, esquemas, autenticación y respuestas.
 - [`contracts/catalogo.proto`](contracts/catalogo.proto): contrato Protobuf v3 del servicio y los mensajes gRPC.
 
-Los stubs Python generados se encuentran en `catalogo_service/protos/` y `prestamos_service/protos/`. Si cambia el `.proto`, instala `grpcio-tools` en el Python local y regenera desde la raíz:
+Los stubs versionados están en `catalogo_service/protos/` y `prestamos_service/protos/`. El mismo generador se usa en Docker y desarrollo. Preparar el entorno desde la raíz (Python 3.13 para las comprobaciones locales de este bloque):
 
 ```bash
-python3 -m pip install grpcio-tools
-python3 -m grpc_tools.protoc -Icontracts --python_out=catalogo_service/protos --grpc_python_out=catalogo_service/protos contracts/catalogo.proto
-python3 -m grpc_tools.protoc -Icontracts --python_out=prestamos_service/protos --grpc_python_out=prestamos_service/protos contracts/catalogo.proto
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python scripts/generar_protos.py
+.venv/bin/python scripts/generar_protos.py --check
 ```
 
-No es necesario regenerar stubs si el contrato no cambia. El servicio Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo` y `ObtenerLibro`.
+El check falla si los archivos versionados difieren del compilador fijado; no los corrige silenciosamente. Docker genera sus propios stubs sin copiarlos desde el host. Catálogo implementa `ConsultarDisponibilidad`, `ReservarEjemplar`, `LiberarEjemplar`, `ListarCatalogo` y `ObtenerLibro`.
+
+### Pruebas aisladas y preparación de migraciones
+
+```bash
+.venv/bin/python scripts/test_unitarios.py
+.venv/bin/python -m pip check
+.venv/bin/python scripts/verificar_compose.py
+```
+
+El primer runner comprueba deriva y ejecuta, en procesos separados, las suites comunes, de Catálogo y de Préstamos. Usan SQLite temporal, un servidor gRPC local con puerto asignado por el sistema y clientes de prueba; no ejecutan semillas sobre las BD del usuario. Los servicios falsos se limitan a impedir escrituras remotas no esperadas en los casos unitarios de Préstamos.
+
+El runner de Compose usa explícitamente `docker-compose.yml`, sin overrides ni `.env` locales, y fija la URL interna de Sanciones. Crea dos proyectos con nombres/puertos propios, comprueba bindings mediante `docker inspect`, DNS, una lectura gRPC real, separación de volúmenes/datos y arranque de Préstamos con Sanciones detenida. Su limpieza elimina los contenedores, redes, volúmenes e imágenes de esos proyectos desechables. El script antiguo de Gateway admite `BASE_URL` o `GATEWAY_PORT`; su cobertura y limitaciones están registradas en `docs/seguimiento-integrante2.md`.
+
+`scripts/migrar_sqlite.py` prepara el mecanismo de migraciones SQL incrementales para los cambios de esquema posteriores: registra checksum, aplica una sola vez y hace rollback si falla. Todavía no se han añadido migraciones de negocio ni se ha cambiado el esquema de los servicios en C01–C03; `create_all()` sigue inicializando instalaciones nuevas y no se presenta como migración de tablas existentes.
 
 ### Ejecución Local de los Microservicios (sin Docker)
 
-Para ejecutar cualquiera de los microservicios de manera independiente en la máquina local:
+Tras instalar las dependencias y generar los stubs como se indica arriba, activar el entorno en cada terminal para la ejecución local:
 
 ```bash
+source .venv/bin/activate
+
 # 1. Catálogo (gRPC en puerto 50051)
 python catalogo_service/main.py
 

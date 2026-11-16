@@ -1,12 +1,8 @@
 services:
   catalogo:
     build:
-      context: ./catalogo_service
-      dockerfile: Dockerfile
-    container_name: catalogo_service
-
-    # ports:
-    #   - "50051:50051"
+      context: .
+      dockerfile: catalogo_service/Dockerfile
     volumes:
       - catalogo_data:/app/data
     environment:
@@ -14,15 +10,17 @@ services:
       - GRPC_PORT=50051
     networks:
       - biblioteca_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; c=grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(c).result(timeout=2); c.close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   prestamos:
     build:
-      context: ./prestamos_service
-      dockerfile: Dockerfile
-    container_name: prestamos_service
-
-    # ports:
-    #   - "8000:8000"
+      context: .
+      dockerfile: prestamos_service/Dockerfile
     volumes:
       - prestamos_data:/app/data
     environment:
@@ -32,41 +30,56 @@ services:
       - SANCIONES_URL=${SANCIONES_URL:-http://sanciones:8000}
       - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
     depends_on:
-      - catalogo
-      - sanciones
+      catalogo:
+        condition: service_healthy
     networks:
       - biblioteca_net
+    # Liveness: /health sigue informando por separado el estado de dependencias.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   sanciones:
     build:
-      context: ./sanciones_service
-      dockerfile: Dockerfile
-    container_name: sanciones_service
-
-    # ports:
-    #   - "8001:8000"
+      context: .
+      dockerfile: sanciones_service/Dockerfile
     volumes:
       - sanciones_data:/app/data
     environment:
       - DATABASE_URL=sqlite:////app/data/sanciones.db
     networks:
       - biblioteca_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   gateway:
     build:
-      context: ./gateway_service
-      dockerfile: Dockerfile
-    container_name: gateway_service
+      context: .
+      dockerfile: gateway_service/Dockerfile
     ports:
-    - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     environment:
       - PRESTAMOS_URL=http://prestamos:8000
       - API_KEY=${API_KEY:-biblioteca_dev_key_2026}
       - JWT_SECRET=${JWT_SECRET:-dev_secret_cambiar}
     depends_on:
-      - prestamos
+      prestamos:
+        condition: service_healthy
     networks:
       - biblioteca_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
 volumes:
   catalogo_data:
@@ -75,5 +88,4 @@ volumes:
 
 networks:
   biblioteca_net:
-    name: biblioteca_net
     driver: bridge
