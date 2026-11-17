@@ -21,7 +21,7 @@ async def recursos_admitidos(request: Request):
 
 @router.get("/resumen-prestamos-socio/{socio_id}", response_model=ResumenOut,
     description="Compone Préstamos, Catálogo gRPC y Sanciones por RUT. Los fallos de fuentes opcionales producen 200 parcial con desconocidos null.")
-async def resumen_socio(socio_id: Annotated[int, Path(gt=0)], request: Request,
+async def resumen_socio(socio_id: Annotated[int, Path(gt=0, lt=9223372036854775808)], request: Request,
         identidad: Identidad = Depends(identidad_gateway), recursos=Depends(recursos_admitidos)):
     identidad.autorizar(socio_id)
     return await resumen(recursos, socio_id, identidad, request.state.request_id, time.monotonic() + recursos.config.resumen_timeout)

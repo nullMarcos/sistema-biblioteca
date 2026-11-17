@@ -163,6 +163,7 @@ paths:
         required: true
         schema:
           type: integer
+          exclusiveMaximum: 9223372036854775808
           exclusiveMinimum: 0
           title: Socio Id
       responses:
@@ -578,6 +579,7 @@ paths:
         required: true
         schema:
           type: integer
+          exclusiveMaximum: 9223372036854775808
           exclusiveMinimum: 0
           title: Prestamo Id
       responses:
@@ -662,6 +664,7 @@ paths:
         required: true
         schema:
           type: integer
+          exclusiveMaximum: 9223372036854775808
           exclusiveMinimum: 0
           title: Prestamo Id
       - name: Idempotency-Key
@@ -844,6 +847,7 @@ paths:
         required: true
         schema:
           type: integer
+          exclusiveMaximum: 9223372036854775808
           exclusiveMinimum: 0
           title: Prestamo Id
       - name: Idempotency-Key
@@ -1120,6 +1124,7 @@ components:
       properties:
         socio_id:
           type: integer
+          exclusiveMaximum: 9.223372036854776e+18
           exclusiveMinimum: 0.0
           title: Socio Id
         libro_id:

@@ -30,7 +30,7 @@ FechaUTC = Annotated[datetime, AfterValidator(fecha_utc)]
 
 
 class PrestamoInput(BaseModel):
-    socio_id: int = Field(gt=0, strict=True)
+    socio_id: int = Field(gt=0, lt=9223372036854775808, strict=True)
     libro_id: int = Field(gt=0, le=2147483647, strict=True)
     idempotency_key: Optional[ClaveIdempotencia] = Field(None, description="Identidad estable de la solicitud")
     simular_fallo_paso3: bool = Field(False, strict=True,

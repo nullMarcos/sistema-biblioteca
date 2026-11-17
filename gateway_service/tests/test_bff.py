@@ -17,6 +17,20 @@ def test_jwt_socio_exige_vinculo_positivo_y_tipado(client, socio_id):
     assert client.get("/api/v1/socios", headers={"Authorization": f"Bearer {token}"}).status_code == 401
 
 
+@pytest.mark.parametrize("campo,valor", [("exp", 10 ** 400), ("iat", -(10 ** 400))])
+def test_jwt_fecha_fuera_de_rango_es_401_sin_llamada_interna(client, monkeypatch, campo, valor):
+    llamadas = []
+    async def remoto(*args, **kwargs):
+        llamadas.append(1)
+        return httpx.Response(200, json={})
+    monkeypatch.setattr(main.client, "request", remoto)
+    claims = {"sub": "1", "role": "admin", "iat": int(time.time()), "exp": int(time.time()) + 60, campo: valor}
+    token = jwt.encode(claims, main.JWT_SECRET, algorithm=main.JWT_ALGORITMO)
+    respuesta = client.get("/bff/web/resumen-prestamos-socio/1", headers={"Authorization": f"Bearer {token}"})
+    assert respuesta.status_code == 401, respuesta.text
+    assert not llamadas
+
+
 def test_gateway_bff_reemplaza_toda_identidad_y_propaga_respuesta_y_clave(client, monkeypatch):
     observadas = []
     async def remoto(metodo, destino, **kwargs):

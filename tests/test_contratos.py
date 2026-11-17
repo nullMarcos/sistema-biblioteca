@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+import pytest
 from scripts.generar_openapi import contratos
 import yaml
 
@@ -23,3 +25,14 @@ def test_contratos_estaticos_coinciden_con_fastapi_y_gateway_real():
     bff = yaml.safe_load((ROOT / "contracts/bff.openapi.yaml").read_text())
     assert set(bff["paths"]) <= publicos["paths"].keys()
     assert not any("internal" in ruta or "health" in ruta for ruta in bff["paths"])
+
+
+@pytest.mark.parametrize("nombre,modelo", [("openapi.yaml", "PrestamoInput"),
+    ("bff.openapi.yaml", "SolicitudInput"), ("gateway.openapi.yaml", "PrestamoInput"),
+    ("gateway.openapi.yaml", "SolicitudInput")])
+def test_contrato_preserva_el_limite_entero_sqlite_sin_redondearlo(nombre, modelo):
+    documento = yaml.safe_load((ROOT / "contracts" / nombre).read_text())
+    esquema = documento["components"]["schemas"][modelo]["properties"]["socio_id"]
+    validador = Draft202012Validator(esquema)
+    assert validador.is_valid(2 ** 63 - 1)
+    assert not validador.is_valid(2 ** 63)

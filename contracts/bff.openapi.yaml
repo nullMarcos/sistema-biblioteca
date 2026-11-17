@@ -21,6 +21,7 @@ paths:
         required: true
         schema:
           type: integer
+          exclusiveMaximum: 9223372036854775808
           exclusiveMinimum: 0
           title: Socio Id
       - name: X-Request-Id
@@ -668,6 +669,7 @@ components:
       properties:
         socio_id:
           type: integer
+          exclusiveMaximum: 9.223372036854776e+18
           exclusiveMinimum: 0.0
           title: Socio Id
         libro_id:

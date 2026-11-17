@@ -158,7 +158,7 @@ def autenticar(cred: HTTPAuthorizationCredentials | None = Depends(bearer)) -> d
         return claims
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
+    except (jwt.InvalidTokenError, OverflowError):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 

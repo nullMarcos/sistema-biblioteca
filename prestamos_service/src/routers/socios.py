@@ -71,7 +71,7 @@ def crear_socio(socio: SocioInput, db: Session = Depends(get_db), identidad: Ide
     return nuevo_socio
 
 @router.get("/{socio_id}", response_model=SocioOut)
-def consultar_socio(socio_id: Annotated[int, Path(gt=0)], db: Session = Depends(get_db), identidad: Identidad = Depends(identidad_interna)):
+def consultar_socio(socio_id: Annotated[int, Path(gt=0, lt=9223372036854775808)], db: Session = Depends(get_db), identidad: Identidad = Depends(identidad_interna)):
     identidad.autorizar(socio_id)
     socio = db.get(models.Socio, socio_id)
     if socio is None:

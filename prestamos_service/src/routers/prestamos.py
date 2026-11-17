@@ -140,7 +140,7 @@ def consultar_saga_por_idempotencia(idempotency_key: ClaveIdempotencia, db: Sess
     return registro
 
 @router.get("/{prestamo_id}", response_model=PrestamoOut)
-def consultar_prestamo(prestamo_id: Annotated[int, Path(gt=0)], db: Session = Depends(get_db), identidad: Identidad = Depends(identidad_interna)):
+def consultar_prestamo(prestamo_id: Annotated[int, Path(gt=0, lt=9223372036854775808)], db: Session = Depends(get_db), identidad: Identidad = Depends(identidad_interna)):
     prestamo = db.get(models.Prestamo, prestamo_id)
     if prestamo is None:
         raise HTTPException(
@@ -166,7 +166,7 @@ def consultar_devolucion(idempotency_key: ClaveIdempotencia, db: Session = Depen
 
 @router.post("/{prestamo_id}/devolucion", response_model=PrestamoOut)
 @router.delete("/{prestamo_id}", response_model=PrestamoOut, deprecated=True)
-def eliminar_prestamo(prestamo_id: Annotated[int, Path(gt=0)], request: Request,
+def eliminar_prestamo(prestamo_id: Annotated[int, Path(gt=0, lt=9223372036854775808)], request: Request,
         idempotency_key: Optional[ClaveIdempotencia] = Header(None, alias="Idempotency-Key"),
         db: Session = Depends(get_db), identidad: Identidad = Depends(identidad_interna)):
     """Devuelve ACTIVO; cancela EN_REVISION a ANULADO sin aprobar ni entregar el ejemplar."""
