@@ -1,6 +1,7 @@
 """Transacciones locales y propiedad persistente, sin locks de Python."""
 
 from contextlib import contextmanager
+import math
 import os
 import time
 
@@ -11,9 +12,10 @@ LEASE_SECONDS = float(os.getenv("SAGA_LEASE_SECONDS", "30"))
 MAX_INTENTOS = int(os.getenv("SAGA_RECUPERACION_MAX_INTENTOS", "5"))
 BACKOFF_INICIAL = float(os.getenv("SAGA_RECUPERACION_BACKOFF", "1"))
 BACKOFF_MAXIMO = float(os.getenv("SAGA_RECUPERACION_BACKOFF_MAX", "60"))
-if LEASE_SECONDS <= 0:
-    raise RuntimeError("SAGA_LEASE_SECONDS debe ser positivo")
-if MAX_INTENTOS <= 0 or not 0 < BACKOFF_INICIAL <= BACKOFF_MAXIMO:
+if not math.isfinite(LEASE_SECONDS) or LEASE_SECONDS <= 0:
+    raise RuntimeError("SAGA_LEASE_SECONDS debe ser positivo y finito")
+if (MAX_INTENTOS <= 0 or not all(math.isfinite(v) for v in (BACKOFF_INICIAL, BACKOFF_MAXIMO))
+        or not 0 < BACKOFF_INICIAL <= BACKOFF_MAXIMO):
     raise RuntimeError("Intentos y backoff de recuperación inválidos")
 TERMINALES = ("COMPLETADA", "COMPENSADA", "FALLIDA")
 

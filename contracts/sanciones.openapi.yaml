@@ -228,7 +228,9 @@ paths:
       summary: Consultar Sanciones Socio
       description: 'Consulta si un socio tiene sanciones activas (bloqueos o multas pendientes).
 
-        El parámetro `identificador` admite tanto el RUT (''11.111.111-1'') como el ID numérico (ej. ''1'').'
+        El parámetro `identificador` admite tanto el RUT (''11.111.111-1'') como el ID numérico (ej. ''1'').
+
+        Un bloqueo ACTIVO solo rige en el intervalo UTC [fecha_inicio, fecha_fin); fin null es indefinido.'
       operationId: consultar_sanciones_socio_v1_sanciones_socios__identificador__get
       parameters:
       - name: identificador
@@ -267,7 +269,7 @@ paths:
       tags:
       - Sanciones
       summary: Listar Sanciones Socios
-      description: Lista todos los socios y el resumen de sus sanciones, con filtro opcional por RUT.
+      description: Lista socios y sanciones, con filtro por RUT. Bloqueos ACTIVO en intervalo UTC [inicio, fin).
       operationId: listar_sanciones_socios_v1_sanciones_socios_get
       parameters:
       - name: rut

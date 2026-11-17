@@ -15,7 +15,7 @@ class ErrorResponse(BaseModel):
 
 class SolicitudInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    socio_id: int = Field(gt=0)
+    socio_id: int = Field(gt=0, lt=9223372036854775808)
     libro_id: int = Field(gt=0, le=2147483647)
 
 

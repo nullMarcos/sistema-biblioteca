@@ -1,5 +1,7 @@
 from datetime import date, datetime, timezone
 
+import pytest
+
 from src import models
 
 
@@ -13,6 +15,20 @@ def test_socio_inexistente(client):
     response = client.get("/v1/socios/987654")
     assert response.status_code == 404
     assert response.json() == {"codigo": "SOCIO_NO_ENCONTRADO", "mensaje": "No existe un Socio con ese ID"}
+
+
+@pytest.mark.parametrize("metodo,ruta,cuerpo", [
+    ("get", f"/v1/socios/{2 ** 63}", None),
+    ("get", f"/v1/prestamos/{2 ** 63}", None),
+    ("post", f"/v1/prestamos/{2 ** 63}/devolucion", {}),
+    ("delete", f"/v1/prestamos/{2 ** 63}", None),
+    ("post", "/v1/prestamos", {"socio_id": 2 ** 63, "libro_id": 1}),
+])
+def test_id_fuera_del_rango_sqlite_es_validacion_sin_saga(client, db, metodo, ruta, cuerpo):
+    respuesta = client.request(metodo, ruta, json=cuerpo)
+    assert respuesta.status_code == 400, respuesta.text
+    assert respuesta.json()["codigo"] == "ERROR_VALIDACION"
+    assert db.query(models.SagaTransaccion).count() == 0
 
 
 def test_prestamo_sin_socio_no_reserva(client):

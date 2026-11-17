@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 from decimal import Decimal
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Optional, List
 
@@ -23,6 +24,7 @@ from src.schemas import (
     DependencyStatus,
     ChaosState,
     ErrorResponse,
+    fecha_utc,
 )
 from src.seed import seed_database
 
@@ -179,6 +181,12 @@ def get_chaos_status():
 
 
 # --- ENDPOINTS DE NEGOCIO: SANCIONES ---
+def bloqueo_vigente(bloqueo, ahora):
+    """Intervalo UTC [inicio, fin); las fechas SQLite naive se interpretan como UTC."""
+    return (bloqueo.estado == "ACTIVO" and fecha_utc(bloqueo.fecha_inicio) <= ahora
+        and (bloqueo.fecha_fin is None or ahora < fecha_utc(bloqueo.fecha_fin)))
+
+
 @app.get(
     "/v1/sanciones/socios/{identificador}",
     response_model=SancionSocioResponse,
@@ -192,11 +200,15 @@ def consultar_sanciones_socio(identificador: str, db: Session = Depends(get_db))
     """
     Consulta si un socio tiene sanciones activas (bloqueos o multas pendientes).
     El parámetro `identificador` admite tanto el RUT ('11.111.111-1') como el ID numérico (ej. '1').
+    Un bloqueo ACTIVO solo rige en el intervalo UTC [fecha_inicio, fecha_fin); fin null es indefinido.
     """
     socio = None
-    if identificador.isdigit():
+    if identificador.isascii() and identificador.isdecimal():
+        numero = identificador.lstrip("0") or "0"
+        if len(numero) > 19 or int(numero) > 9223372036854775807:
+            raise HTTPException(400, detail={"codigo": "ERROR_VALIDACION", "mensaje": "ID de socio fuera del rango de SQLite"})
         socio = db.query(models.Socio).filter(
-            or_(models.Socio.id == int(identificador), models.Socio.rut == identificador)
+            or_(models.Socio.id == int(numero), models.Socio.rut == identificador)
         ).first()
     else:
         socio = db.query(models.Socio).filter(models.Socio.rut == identificador).first()
@@ -211,7 +223,8 @@ def consultar_sanciones_socio(identificador: str, db: Session = Depends(get_db))
         )
 
     # Filtrar bloqueos y multas vigentes
-    bloqueos_activos = [b for b in socio.bloqueos if b.estado == "ACTIVO"]
+    ahora = datetime.now(timezone.utc)
+    bloqueos_activos = [b for b in socio.bloqueos if bloqueo_vigente(b, ahora)]
     multas_pendientes = [m for m in socio.multas if m.estado == "PENDIENTE"]
     monto_total = sum((m.monto or Decimal(0)) for m in multas_pendientes)
 
@@ -236,14 +249,15 @@ def consultar_sanciones_socio(identificador: str, db: Session = Depends(get_db))
     tags=["Sanciones"],
 )
 def listar_sanciones_socios(rut: Optional[str] = None, db: Session = Depends(get_db)):
-    """Lista todos los socios y el resumen de sus sanciones, con filtro opcional por RUT."""
+    """Lista socios y sanciones, con filtro por RUT. Bloqueos ACTIVO en intervalo UTC [inicio, fin)."""
     query = db.query(models.Socio)
     if rut is not None:
         query = query.filter(models.Socio.rut == rut)
     socios = query.all()
+    ahora = datetime.now(timezone.utc)
     resultado = []
     for s in socios:
-        b_activos = [b for b in s.bloqueos if b.estado == "ACTIVO"]
+        b_activos = [b for b in s.bloqueos if bloqueo_vigente(b, ahora)]
         m_pendientes = [m for m in s.multas if m.estado == "PENDIENTE"]
         monto_total = sum((m.monto or Decimal(0)) for m in m_pendientes)
         resultado.append(

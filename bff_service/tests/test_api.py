@@ -145,9 +145,16 @@ def test_post_exige_clave_valida_sin_efecto_remoto(client, fuentes, clave):
 
 @pytest.mark.parametrize("datos", [{"socio_id": 0, "libro_id": 1}, {"socio_id": 1, "libro_id": -1},
     {"socio_id": "1", "libro_id": 1}, {"socio_id": True, "libro_id": 1},
+    {"socio_id": 2 ** 63, "libro_id": 1},
     {"socio_id": 1, "libro_id": 1, "simular_fallo_paso3": True}])
 def test_post_formato_invalido_y_control_de_caos_rechazados(client, fuentes, datos):
     assert client.post(POST, json=datos, headers={"Idempotency-Key": "validacion"}).status_code == 400
+    assert not fuentes.peticiones
+
+
+def test_get_id_fuera_del_rango_sqlite_no_consulta_fuentes(client, fuentes):
+    respuesta = client.get(f"/bff/web/resumen-prestamos-socio/{2 ** 63}")
+    assert respuesta.status_code == 400, respuesta.text
     assert not fuentes.peticiones
 
 
