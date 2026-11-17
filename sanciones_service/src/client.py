@@ -45,10 +45,12 @@ class SancionesResilientClient:
         recovery_timeout: float = 5.0,
         max_concurrent: int = 5,
         enable_fallback: bool = True,
+        enable_circuit_breaker: bool = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.enable_fallback = enable_fallback
+        self.enable_circuit_breaker = enable_circuit_breaker
 
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=failure_threshold,
@@ -122,7 +124,7 @@ class SancionesResilientClient:
         inicio = time.monotonic()
 
         # 1. Comprobar si el Circuit Breaker permite la llamada (fail-fast si está OPEN)
-        if not await self.circuit_breaker.can_execute():
+        if self.enable_circuit_breaker and not await self.circuit_breaker.can_execute():
             err = CircuitBreakerOpenError(
                 mensaje=f"Circuito OPEN hacia Sanciones (fail-fast en {round((time.monotonic() - inicio)*1000, 2)}ms)"
             )
